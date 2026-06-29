@@ -82,7 +82,12 @@ class IGClient:
 
     def get_historical_prices(self, epic: str, resolution: str, limit: int) -> dict[str, Any]:
         bounded_limit = max(1, min(limit, 1000))
-        return self._request("GET", f"/prices/{epic}/{resolution}/{bounded_limit}", version="3")
+        return self._request(
+            "GET",
+            f"/prices/{epic}",
+            params={"resolution": resolution, "max": bounded_limit},
+            version="3",
+        )
 
     def _login(self) -> IGSession:
         if not self.is_configured:

@@ -1,4 +1,31 @@
-from app.services.ig_client import sanitize_ig_account
+from typing import Any
+
+from app.services.ig_client import IGClient, sanitize_ig_account
+
+
+class RecordingIGClient(IGClient):
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        version: str = "1",
+        retry_on_expired_session: bool = True,
+    ) -> dict[str, Any]:
+        self.calls.append(
+            {
+                "method": method,
+                "path": path,
+                "params": params,
+                "version": version,
+                "retry_on_expired_session": retry_on_expired_session,
+            }
+        )
+        return {"prices": []}
 
 
 def test_sanitize_ig_account_only_returns_safe_account_fields():
@@ -35,3 +62,18 @@ def test_sanitize_ig_account_supports_default_flag_alias():
         "accountId": "XYZ789",
         "preferred": True,
     }
+
+
+def test_historical_prices_uses_ig_v3_query_parameters():
+    client = RecordingIGClient()
+
+    assert client.get_historical_prices("CS.D.EURUSD.CFD.IP", "HOUR", 300) == {"prices": []}
+    assert client.calls == [
+        {
+            "method": "GET",
+            "path": "/prices/CS.D.EURUSD.CFD.IP",
+            "params": {"resolution": "HOUR", "max": 300},
+            "version": "3",
+            "retry_on_expired_session": True,
+        }
+    ]
