@@ -117,6 +117,21 @@ For Render, set `CORS_ORIGINS` as a plain URL or comma-separated string, for exa
 CORS_ORIGINS=https://signals.27tools.co
 ```
 
+Create a Render PostgreSQL database and copy its **Internal Database URL** into the backend web service:
+
+```text
+DATABASE_URL=postgresql+psycopg://USER:PASSWORD@HOST:5432/DATABASE
+ENVIRONMENT=render
+```
+
+Do not use the local Docker Compose URL on Render:
+
+```text
+postgresql+psycopg://postgres:postgres@db:5432/forex_signals
+```
+
+The hostname `db` only exists inside local Docker Compose.
+
 Do not put IG secrets in Cloudflare Pages. Add them to the backend host only:
 
 ```text

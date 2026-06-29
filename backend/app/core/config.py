@@ -1,5 +1,7 @@
 from functools import lru_cache
 import json
+import os
+from urllib.parse import urlparse
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -42,6 +44,24 @@ class Settings(BaseSettings):
             return [str(origin).strip() for origin in parsed if str(origin).strip()]
 
         return [origin.strip() for origin in stripped.split(",") if origin.strip()]
+
+    @property
+    def is_render(self) -> bool:
+        return self.environment.lower() == "render" or bool(os.getenv("RENDER"))
+
+    @property
+    def effective_database_url(self) -> str:
+        if self.database_url.startswith("postgresql://"):
+            return self.database_url.replace("postgresql://", "postgresql+psycopg://", 1)
+        return self.database_url
+
+    def validate_runtime_configuration(self) -> None:
+        parsed_database_url = urlparse(self.effective_database_url)
+        if self.is_render and parsed_database_url.hostname == "db":
+            raise RuntimeError(
+                "DATABASE_URL points to Docker Compose host 'db'. "
+                "On Render, set DATABASE_URL to the Render PostgreSQL Internal Database URL."
+            )
 
 
 @lru_cache
