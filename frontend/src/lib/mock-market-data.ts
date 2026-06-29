@@ -43,7 +43,7 @@ function seededNoise(seed: number) {
   return value - Math.floor(value);
 }
 
-function calculateEma(candles: CandlestickData[], period: number): LineData[] {
+export function calculateEma(candles: CandlestickData[], period: number): LineData[] {
   const multiplier = 2 / (period + 1);
   let ema = Number(candles[0]?.close ?? 0);
 
@@ -130,6 +130,41 @@ export function getMockChartData(symbol: string, timeframe: Timeframe): ChartDat
     ema200: calculateEma(candles, 200),
     markers,
     signals
+  };
+}
+
+export function buildChartDataFromCandles(symbol: string, timeframe: Timeframe, candles: CandlestickData[]): ChartDataSet {
+  const ema20 = calculateEma(candles, 20);
+  const ema50 = calculateEma(candles, 50);
+  const ema200 = calculateEma(candles, 200);
+  const lastCandle = candles[candles.length - 1];
+  const lastEma20 = Number(ema20[ema20.length - 1]?.value ?? lastCandle.close);
+  const direction = Number(lastCandle.close) >= lastEma20 ? "BUY" : "SELL";
+  const score = direction === "BUY" ? 64 : 58;
+  const signal: ChartSignal = {
+    id: "latest-backend-candle",
+    time: lastCandle.time,
+    direction,
+    score,
+    price: Number(lastCandle.close),
+    reason: `Latest IG ${timeframe} candle is ${direction === "BUY" ? "above" : "below"} EMA 20.`
+  };
+
+  return {
+    candles,
+    ema20,
+    ema50,
+    ema200,
+    markers: [
+      {
+        time: signal.time,
+        position: direction === "BUY" ? "belowBar" : "aboveBar",
+        color: direction === "BUY" ? "#22c55e" : "#fb7185",
+        shape: direction === "BUY" ? "arrowUp" : "arrowDown",
+        text: `${direction} ${score}`
+      }
+    ],
+    signals: [signal]
   };
 }
 

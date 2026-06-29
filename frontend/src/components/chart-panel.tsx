@@ -16,6 +16,8 @@ import { useEffect, useRef } from "react";
 type ChartPanelProps = {
   symbol: string;
   timeframe: string;
+  dataSource: "ig" | "mock";
+  epic?: string;
   candles: CandlestickData[];
   ema20: LineData[];
   ema50: LineData[];
@@ -23,7 +25,7 @@ type ChartPanelProps = {
   markers: SeriesMarker<Time>[];
 };
 
-export function ChartPanel({ symbol, timeframe, candles, ema20, ema50, ema200, markers }: ChartPanelProps) {
+export function ChartPanel({ symbol, timeframe, dataSource, epic, candles, ema20, ema50, ema200, markers }: ChartPanelProps) {
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -110,11 +112,12 @@ export function ChartPanel({ symbol, timeframe, candles, ema20, ema50, ema200, m
     <section className="chart-panel">
       <div className="chart-header">
         <div>
-          <span className="eyebrow">Live chart mock</span>
+          <span className="eyebrow">{dataSource === "ig" ? "IG demo candles" : "Mock fallback"}</span>
           <h2>{symbol}</h2>
         </div>
         <div className="chart-meta">
           <span>{timeframe}</span>
+          {epic ? <span>{epic}</span> : null}
           <span>EMA 20 / 50 / 200</span>
         </div>
       </div>

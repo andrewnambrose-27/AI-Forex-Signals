@@ -1,8 +1,9 @@
 "use client";
 
 import { Activity, BarChart3, History, ListPlus, Radar, ShieldAlert } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
+import { loadChartData, type LiveChartLoadResult } from "@/lib/api";
 import { getLatestSignal, getMockChartData, type Timeframe } from "@/lib/mock-market-data";
 import { ChartPanel } from "./chart-panel";
 import { SignalPanel } from "./signal-panel";
@@ -13,8 +14,35 @@ const timeframes: Timeframe[] = ["5m", "15m", "1h", "4h", "1d"];
 export function DashboardShell() {
   const [symbol, setSymbol] = useState("EURUSD");
   const [timeframe, setTimeframe] = useState<Timeframe>("1h");
-  const chartData = useMemo(() => getMockChartData(symbol, timeframe), [symbol, timeframe]);
+  const [refreshCount, setRefreshCount] = useState(0);
+  const [chartResult, setChartResult] = useState<LiveChartLoadResult>(() => ({
+    chartData: getMockChartData("EURUSD", "1h"),
+    dataSource: "mock"
+  }));
+  const [isLoading, setIsLoading] = useState(false);
+  const chartData = chartResult.chartData;
   const latestSignal = useMemo(() => getLatestSignal(symbol, timeframe, chartData), [symbol, timeframe, chartData]);
+
+  useEffect(() => {
+    let isCancelled = false;
+    setIsLoading(true);
+
+    loadChartData(symbol, timeframe)
+      .then((result) => {
+        if (!isCancelled) {
+          setChartResult(result);
+        }
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setIsLoading(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [symbol, timeframe, refreshCount]);
 
   return (
     <div className="terminal-shell">
@@ -65,17 +93,24 @@ export function DashboardShell() {
                 </button>
               ))}
             </div>
-            <button className="button" type="button">
+            <button className="button" type="button" onClick={() => setRefreshCount((value) => value + 1)} disabled={isLoading}>
               <Activity size={18} />
-              Refresh
+              {isLoading ? "Loading" : "Refresh"}
             </button>
           </div>
         </header>
+
+        <div className={`data-status ${chartResult.dataSource === "ig" ? "live" : "mock"}`}>
+          <span>{chartResult.dataSource === "ig" ? "Connected to IG demo candles" : "Using mock fallback data"}</span>
+          {chartResult.error ? <span>{chartResult.error}</span> : null}
+        </div>
 
         <div className="chart-layout">
           <ChartPanel
             symbol={symbol}
             timeframe={timeframe}
+            dataSource={chartResult.dataSource}
+            epic={chartResult.epic}
             candles={chartData.candles}
             ema20={chartData.ema20}
             ema50={chartData.ema50}

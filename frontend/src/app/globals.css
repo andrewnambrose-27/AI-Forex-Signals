@@ -195,6 +195,37 @@ button:disabled {
   align-items: start;
 }
 
+.data-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(11, 17, 28, 0.74);
+  color: var(--muted);
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.data-status::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--warning);
+}
+
+.data-status.live::before {
+  background: var(--accent);
+}
+
+.data-status.mock::before {
+  background: var(--warning);
+}
+
 .chart-panel,
 .signal-card,
 .login-panel {
