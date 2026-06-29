@@ -24,17 +24,42 @@ def get_ig_client() -> IGClient:
 def ig_status() -> dict[str, Any]:
     client = get_ig_client()
     status = client.status()
+    status["is_demo_environment"] = client.environment == "DEMO"
+    status["credentials_present"] = client.is_configured
+    status["selected_account_id_exists"] = False
 
     if not status["configured"]:
         return status
 
     try:
-        status["accounts"] = client.get_accounts().get("accounts", [])
+        accounts = client.get_sanitized_accounts()
         status["authenticated"] = True
     except IGClientError as exc:
         raise _ig_http_exception(exc) from exc
 
+    selected_account_id = status.get("account_id")
+    status["accounts"] = accounts
+    status["selected_account_id_exists"] = bool(
+        selected_account_id and any(account.get("accountId") == selected_account_id for account in accounts)
+    )
     return status
+
+
+@router.get("/ig/accounts")
+def ig_accounts() -> dict[str, Any]:
+    client = get_ig_client()
+    if client.environment != "DEMO":
+        raise HTTPException(status_code=400, detail="IG_ENVIRONMENT must be DEMO for this endpoint")
+
+    try:
+        accounts = client.get_sanitized_accounts()
+    except IGClientError as exc:
+        raise _ig_http_exception(exc) from exc
+
+    return {
+        "environment": client.environment,
+        "accounts": accounts,
+    }
 
 
 @router.get("/markets/search")

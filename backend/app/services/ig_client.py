@@ -73,6 +73,10 @@ class IGClient:
     def get_accounts(self) -> dict[str, Any]:
         return self._request("GET", "/accounts", version="1")
 
+    def get_sanitized_accounts(self) -> list[dict[str, Any]]:
+        payload = self.get_accounts()
+        return [sanitize_ig_account(account) for account in payload.get("accounts", [])]
+
     def search_markets(self, query: str) -> dict[str, Any]:
         return self._request("GET", "/markets", params={"searchTerm": query}, version="1")
 
@@ -225,3 +229,22 @@ def _parse_ig_timestamp(value: str | None) -> datetime | None:
     except ValueError:
         return None
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def sanitize_ig_account(account: dict[str, Any]) -> dict[str, Any]:
+    preferred = (
+        account.get("preferred")
+        if "preferred" in account
+        else account.get("default")
+        if "default" in account
+        else account.get("isDefault")
+        if "isDefault" in account
+        else account.get("selected")
+    )
+
+    return {
+        "accountName": account.get("accountName") or account.get("accountAlias"),
+        "accountType": account.get("accountType"),
+        "accountId": account.get("accountId"),
+        "preferred": bool(preferred) if preferred is not None else None,
+    }

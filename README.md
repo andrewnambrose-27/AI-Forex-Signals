@@ -84,6 +84,7 @@ If the Cloudflare Pages project root is already set to `frontend`, use `npm inst
 ## API Overview
 
 - `GET /api/ig/status` checks IG connector configuration and account access.
+- `GET /api/ig/accounts` logs in to IG DEMO and returns sanitized account names, types, IDs, and preferred/default flags.
 - `GET /api/markets/search?q=EURUSD` searches IG markets.
 - `GET /api/candles?epic={epic}&resolution=HOUR&limit=100` fetches IG historical prices, stores raw candle data, and returns normalized candles.
 - `POST /api/v1/auth/register` creates a user.
@@ -106,6 +107,24 @@ Create future revisions with:
 
 ```bash
 alembic -c backend/alembic.ini revision --autogenerate -m "describe change"
+```
+
+## Render Backend Notes
+
+For Render, set `CORS_ORIGINS` as a plain URL or comma-separated string, for example:
+
+```text
+CORS_ORIGINS=https://signals.27tools.co
+```
+
+Do not put IG secrets in Cloudflare Pages. Add them to the backend host only:
+
+```text
+IG_ENVIRONMENT=DEMO
+IG_API_KEY=...
+IG_USERNAME=...
+IG_PASSWORD=...
+IG_ACCOUNT_ID=...
 ```
 
 ## Next Implementation Steps
