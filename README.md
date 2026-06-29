@@ -57,6 +57,8 @@ cp .env.example .env
 docker compose up --build
 ```
 
+The backend runs Alembic migrations before starting FastAPI.
+
 4. Open the services:
 
 - Frontend: http://localhost:3000
@@ -91,6 +93,20 @@ If the Cloudflare Pages project root is already set to `frontend`, use `npm inst
 - `GET /api/v1/candles/{symbol}` reads stored candles.
 - `POST /api/v1/signals/score` scores a signal without placing a trade.
 - `GET /api/v1/signals/history` lists saved signal history.
+
+## Database Migrations
+
+Run migrations from the repository root:
+
+```bash
+alembic -c backend/alembic.ini upgrade head
+```
+
+Create future revisions with:
+
+```bash
+alembic -c backend/alembic.ini revision --autogenerate -m "describe change"
+```
 
 ## Next Implementation Steps
 

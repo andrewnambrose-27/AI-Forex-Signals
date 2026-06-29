@@ -3,12 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import auth, candles, health, ig, signals, watchlist
 from app.core.config import get_settings
-from app.db.session import Base, engine
-from app import models  # noqa: F401
 
 settings = get_settings()
-
-Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title=settings.app_name)
 

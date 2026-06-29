@@ -13,12 +13,14 @@ def generate_signal(payload: SignalRequest) -> SignalRead:
         base_score -= 8
 
     direction = "BUY" if base_score >= 50 else "SELL"
+    score = max(0, min(100, base_score))
     return SignalRead(
-        symbol=symbol,
-        timeframe=payload.timeframe,
+        pair=symbol,
         direction=direction,
-        score=max(0, min(100, base_score)),
-        rationale="Initial placeholder signal. No trades are placed by this application.",
-        risk_flags=risk_flags,
-        news_flags=news_flags,
+        timeframe=payload.timeframe,
+        score=score,
+        status="active" if score >= 50 else "filtered",
+        reasons=["Initial placeholder signal. No trades are placed by this application."],
+        filters_passed=["signal_only_mode"],
+        filters_failed=risk_flags + news_flags,
     )

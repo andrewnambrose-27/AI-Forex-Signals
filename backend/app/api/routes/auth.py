@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, HTTPException, status
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from jose import jwt
 from passlib.context import CryptContext
@@ -36,7 +38,7 @@ def register(payload: UserCreate, db: DbSession) -> User:
 
 
 @router.post("/login", response_model=Token)
-def login(form: OAuth2PasswordRequestForm, db: DbSession) -> Token:
+def login(form: Annotated[OAuth2PasswordRequestForm, Depends()], db: DbSession) -> Token:
     user = db.scalar(select(User).where(User.email == form.username))
     if not user or not password_context.verify(form.password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")

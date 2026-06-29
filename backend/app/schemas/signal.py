@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 
 from pydantic import BaseModel, Field
 
@@ -10,13 +11,18 @@ class SignalRequest(BaseModel):
 
 class SignalRead(BaseModel):
     id: int | None = None
-    symbol: str
-    timeframe: str
+    pair: str
     direction: str
+    timeframe: str
     score: int
-    rationale: str
-    risk_flags: list[str] = []
-    news_flags: list[str] = []
+    status: str = "active"
+    entry_reference_price: Decimal | None = None
+    suggested_stop: Decimal | None = None
+    suggested_target: Decimal | None = None
+    risk_reward_ratio: Decimal | None = None
+    reasons: list[str] = []
+    filters_passed: list[str] = []
+    filters_failed: list[str] = []
     created_at: datetime | None = None
 
     model_config = {"from_attributes": True}
