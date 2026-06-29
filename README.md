@@ -81,6 +81,9 @@ If the Cloudflare Pages project root is already set to `frontend`, use `npm inst
 
 ## API Overview
 
+- `GET /api/ig/status` checks IG connector configuration and account access.
+- `GET /api/markets/search?q=EURUSD` searches IG markets.
+- `GET /api/candles?epic={epic}&resolution=HOUR&limit=100` fetches IG historical prices, stores raw candle data, and returns normalized candles.
 - `POST /api/v1/auth/register` creates a user.
 - `POST /api/v1/auth/login` is a placeholder for JWT login.
 - `GET /api/v1/watchlist` lists watchlist pairs.
@@ -93,8 +96,7 @@ If the Cloudflare Pages project root is already set to `frontend`, use `npm inst
 
 1. Replace placeholder login with JWT authentication and protected routes.
 2. Add Alembic migrations instead of automatic table creation.
-3. Integrate a market data provider for candle ingestion.
-4. Add background jobs for candle refresh and news refresh.
-5. Implement tested signal strategy modules.
-6. Persist generated signals to the database.
-7. Replace the chart placeholder with `lightweight-charts` candle rendering.
+3. Add scheduled background jobs for IG candle refresh and news refresh.
+4. Implement tested signal strategy modules.
+5. Persist generated signals to the database.
+6. Connect the frontend chart to `/api/candles`.

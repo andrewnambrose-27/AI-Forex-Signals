@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     market_data_api_key: str | None = None
     news_api_key: str | None = None
 
+    ig_environment: str = "DEMO"
+    ig_api_key: str | None = None
+    ig_username: str | None = None
+    ig_password: str | None = None
+    ig_account_id: str | None = None
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
 
