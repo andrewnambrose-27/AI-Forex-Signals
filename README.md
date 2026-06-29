@@ -63,6 +63,22 @@ docker compose up --build
 - Backend API docs: http://localhost:8000/docs
 - Backend health check: http://localhost:8000/health
 
+## Cloudflare Pages
+
+For the frontend-only Pages deployment, use:
+
+```bash
+cd frontend && npm install && npm run build
+```
+
+Set the build output directory to:
+
+```text
+frontend/out
+```
+
+If the Cloudflare Pages project root is already set to `frontend`, use `npm install && npm run build` as the build command and `out` as the output directory.
+
 ## API Overview
 
 - `POST /api/v1/auth/register` creates a user.
