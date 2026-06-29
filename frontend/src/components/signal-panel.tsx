@@ -1,51 +1,68 @@
-import type { Signal } from "@/lib/api";
+import { AlertTriangle, CheckCircle2, TrendingDown, TrendingUp } from "lucide-react";
 
-export function SignalPanel({
-  signal,
-  symbol,
-  timeframe
-}: {
-  signal: Signal | null;
+import type { SignalDirection, Timeframe } from "@/lib/mock-market-data";
+
+type LatestSignal = {
   symbol: string;
-  timeframe: string;
-}) {
-  const activeSignal =
-    signal ??
-    ({
-      symbol,
-      timeframe,
-      direction: "WAIT",
-      score: 0,
-      rationale: "Run the signal engine to generate the latest score.",
-      risk_flags: ["risk filters pending"],
-      news_flags: ["news filters pending"]
-    } satisfies Signal);
+  timeframe: Timeframe;
+  direction: SignalDirection;
+  score: number;
+  price: number;
+  reasons: string[];
+  failedFilters: string[];
+};
+
+export function SignalPanel({ signal }: { signal: LatestSignal }) {
+  const isSell = signal.direction === "SELL";
+  const DirectionIcon = isSell ? TrendingDown : TrendingUp;
 
   return (
-    <section className="panel">
-      <h2>Signal Score</h2>
-      <div className="score">{activeSignal.score}</div>
-      <div className="signal-row">
-        <span className="muted">Pair</span>
-        <strong>{activeSignal.symbol}</strong>
-      </div>
-      <div className="signal-row">
-        <span className="muted">Timeframe</span>
-        <strong>{activeSignal.timeframe}</strong>
-      </div>
-      <div className="signal-row">
-        <span className="muted">Direction</span>
-        <span className="badge buy">{activeSignal.direction}</span>
-      </div>
-      <p>{activeSignal.rationale}</p>
-      <div className="signal-row">
-        <span className="muted">Risk</span>
-        <span className="badge warn">{activeSignal.risk_flags.join(", ") || "clear"}</span>
-      </div>
-      <div className="signal-row">
-        <span className="muted">News</span>
-        <span className="badge warn">{activeSignal.news_flags.join(", ") || "clear"}</span>
-      </div>
-    </section>
+    <aside className="signal-sidebar">
+      <section className="signal-card score-card">
+        <div className="score-topline">
+          <span className="eyebrow">Latest signal</span>
+          <span className={`direction-pill ${signal.direction.toLowerCase()}`}>
+            <DirectionIcon size={15} />
+            {signal.direction}
+          </span>
+        </div>
+        <div className="score-readout">
+          <strong>{signal.score}</strong>
+          <span>/100</span>
+        </div>
+        <div className="score-bar">
+          <span style={{ width: `${signal.score}%` }} />
+        </div>
+        <div className="signal-pair-row">
+          <span>{signal.symbol}</span>
+          <span>{signal.timeframe}</span>
+          <span>{signal.price.toFixed(signal.symbol.endsWith("JPY") ? 3 : 5)}</span>
+        </div>
+      </section>
+
+      <section className="signal-card">
+        <h2>Reasons</h2>
+        <div className="reason-list">
+          {signal.reasons.map((reason) => (
+            <div className="reason-item" key={reason}>
+              <CheckCircle2 size={17} />
+              <span>{reason}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="signal-card">
+        <h2>Failed Filters</h2>
+        <div className="reason-list">
+          {signal.failedFilters.map((filter) => (
+            <div className="reason-item failed" key={filter}>
+              <AlertTriangle size={17} />
+              <span>{filter}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+    </aside>
   );
 }

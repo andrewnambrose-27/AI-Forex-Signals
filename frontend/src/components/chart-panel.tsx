@@ -1,21 +1,137 @@
-const candleHeights = [42, 58, 35, 64, 88, 73, 96, 68, 51, 79, 110, 94, 70, 84, 122, 104, 91, 76, 114, 132, 98, 83, 106, 124];
+"use client";
 
-export function ChartPanel({ symbol, timeframe }: { symbol: string; timeframe: string }) {
+import {
+  ColorType,
+  CrosshairMode,
+  createChart,
+  type CandlestickData,
+  type IChartApi,
+  type ISeriesApi,
+  type LineData,
+  type SeriesMarker,
+  type Time
+} from "lightweight-charts";
+import { useEffect, useRef } from "react";
+
+type ChartPanelProps = {
+  symbol: string;
+  timeframe: string;
+  candles: CandlestickData[];
+  ema20: LineData[];
+  ema50: LineData[];
+  ema200: LineData[];
+  markers: SeriesMarker<Time>[];
+};
+
+export function ChartPanel({ symbol, timeframe, candles, ema20, ema50, ema200, markers }: ChartPanelProps) {
+  const chartContainerRef = useRef<HTMLDivElement | null>(null);
+  const chartRef = useRef<IChartApi | null>(null);
+  const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const ema20Ref = useRef<ISeriesApi<"Line"> | null>(null);
+  const ema50Ref = useRef<ISeriesApi<"Line"> | null>(null);
+  const ema200Ref = useRef<ISeriesApi<"Line"> | null>(null);
+
+  useEffect(() => {
+    if (!chartContainerRef.current) {
+      return;
+    }
+
+    const container = chartContainerRef.current;
+    const chart = createChart(container, {
+      width: container.clientWidth,
+      height: 560,
+      layout: {
+        background: { type: ColorType.Solid, color: "#080b12" },
+        textColor: "#9ca3af"
+      },
+      grid: {
+        vertLines: { color: "rgba(148, 163, 184, 0.08)" },
+        horzLines: { color: "rgba(148, 163, 184, 0.08)" }
+      },
+      crosshair: {
+        mode: CrosshairMode.Normal
+      },
+      rightPriceScale: {
+        borderColor: "rgba(148, 163, 184, 0.22)"
+      },
+      timeScale: {
+        borderColor: "rgba(148, 163, 184, 0.22)",
+        timeVisible: true,
+        secondsVisible: false
+      }
+    });
+
+    const candleSeries = chart.addCandlestickSeries({
+      upColor: "#22c55e",
+      downColor: "#f43f5e",
+      borderUpColor: "#22c55e",
+      borderDownColor: "#f43f5e",
+      wickUpColor: "#86efac",
+      wickDownColor: "#fda4af"
+    });
+
+    const ema20Series = chart.addLineSeries({ color: "#38bdf8", lineWidth: 2, priceLineVisible: false });
+    const ema50Series = chart.addLineSeries({ color: "#f59e0b", lineWidth: 2, priceLineVisible: false });
+    const ema200Series = chart.addLineSeries({ color: "#a78bfa", lineWidth: 2, priceLineVisible: false });
+
+    chartRef.current = chart;
+    candleSeriesRef.current = candleSeries;
+    ema20Ref.current = ema20Series;
+    ema50Ref.current = ema50Series;
+    ema200Ref.current = ema200Series;
+
+    const resizeObserver = new ResizeObserver(([entry]) => {
+      chart.applyOptions({ width: Math.floor(entry.contentRect.width) });
+    });
+
+    resizeObserver.observe(container);
+
+    return () => {
+      resizeObserver.disconnect();
+      chart.remove();
+      chartRef.current = null;
+      candleSeriesRef.current = null;
+      ema20Ref.current = null;
+      ema50Ref.current = null;
+      ema200Ref.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    candleSeriesRef.current?.setData(candles);
+    candleSeriesRef.current?.setMarkers(markers);
+    ema20Ref.current?.setData(ema20);
+    ema50Ref.current?.setData(ema50);
+    ema200Ref.current?.setData(ema200);
+    chartRef.current?.timeScale().fitContent();
+  }, [candles, ema20, ema50, ema200, markers]);
+
   return (
-    <section className="panel">
-      <h2>{symbol} Candlestick Chart</h2>
-      <div className="chart-frame">
-        <div className="fake-chart" aria-label={`${symbol} ${timeframe} candlestick chart placeholder`}>
-          {candleHeights.map((height, index) => (
-            <div
-              className={`candle ${index % 3 === 0 ? "sell" : "buy"}`}
-              key={`${height}-${index}`}
-              style={{ height }}
-              title={`${symbol} ${timeframe}`}
-            />
-          ))}
+    <section className="chart-panel">
+      <div className="chart-header">
+        <div>
+          <span className="eyebrow">Live chart mock</span>
+          <h2>{symbol}</h2>
         </div>
-        <p className="muted">Ready for live and historical candles from the backend.</p>
+        <div className="chart-meta">
+          <span>{timeframe}</span>
+          <span>EMA 20 / 50 / 200</span>
+        </div>
+      </div>
+      <div className="chart-canvas" ref={chartContainerRef} />
+      <div className="legend">
+        <span>
+          <i className="legend-dot ema20" /> EMA 20
+        </span>
+        <span>
+          <i className="legend-dot ema50" /> EMA 50
+        </span>
+        <span>
+          <i className="legend-dot ema200" /> EMA 200
+        </span>
+        <span>
+          <i className="legend-dot signal" /> Signal markers
+        </span>
       </div>
     </section>
   );
