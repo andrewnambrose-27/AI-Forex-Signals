@@ -18,6 +18,7 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(ig.router, prefix="/api")
+app.include_router(signals.router, prefix="/api")
 app.include_router(auth.router, prefix=settings.api_v1_prefix)
 app.include_router(candles.router, prefix=settings.api_v1_prefix)
 app.include_router(signals.router, prefix=settings.api_v1_prefix)
