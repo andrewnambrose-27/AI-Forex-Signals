@@ -65,6 +65,51 @@ export type LiveChartLoadResult = {
   error?: string;
 };
 
+export type BacktestRequest = {
+  epic: string;
+  pair: string;
+  timeframe: Timeframe;
+  limit: number;
+  spread_points: number;
+  slippage_points: number;
+  minimum_score: number;
+};
+
+export type BacktestTrade = {
+  strategy: string;
+  direction: "BUY" | "SELL";
+  entry_time: string;
+  exit_time: string;
+  entry_price: number;
+  exit_price: number;
+  stop_loss: number;
+  take_profit: number;
+  r_multiple: number;
+  hold_minutes: number;
+  session: string;
+  news_filtered_period: boolean;
+};
+
+export type BacktestResult = {
+  pair: string;
+  epic: string;
+  timeframe: string;
+  assumptions: Record<string, string | number>;
+  metrics: {
+    win_rate: number;
+    average_r: number;
+    max_drawdown: number;
+    profit_factor: number;
+    number_of_trades: number;
+    average_hold_time_minutes: number;
+    performance_by_session: Record<string, { trades: number; average_r: number; total_r: number }>;
+    performance_around_news_filtered_periods: { trades: number; average_r: number; total_r?: number };
+  };
+  trades: BacktestTrade[];
+  skipped_signals: number;
+  notes: string[];
+};
+
 const resolutionByTimeframe: Record<Timeframe, string> = {
   "5m": "MINUTE_5",
   "15m": "MINUTE_15",
@@ -132,6 +177,22 @@ export async function fetchCandles(epic: string, resolution: string, limit: numb
   const response = await fetch(`${API_BASE_URL}/api/candles?${params.toString()}`);
   if (!response.ok) {
     throw new Error(`Candle fetch failed with HTTP ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function runBacktest(payload: BacktestRequest): Promise<BacktestResult> {
+  const response = await fetch(`${API_BASE_URL}/api/backtest`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    throw new Error(`Backtest failed with HTTP ${response.status}`);
   }
 
   return response.json();

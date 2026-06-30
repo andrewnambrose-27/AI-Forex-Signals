@@ -1,6 +1,7 @@
 "use client";
 
 import { Activity, BarChart3, History, ListPlus, Radar, ShieldAlert } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { loadChartData, type LiveChartLoadResult } from "@/lib/api";
@@ -78,9 +79,9 @@ export function DashboardShell() {
           <div className="nav-item">
             <ShieldAlert size={18} /> Risk
           </div>
-          <div className="nav-item">
+          <Link className="nav-item" href="/backtest">
             <History size={18} /> History
-          </div>
+          </Link>
         </nav>
       </aside>
 

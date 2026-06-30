@@ -152,6 +152,18 @@ def evaluate_strategies(
     )
 
 
+def evaluate_strategy_candidates(primary: list[Any], higher: list[Any]) -> list[StrategyResult]:
+    closed_primary = _closed_candles(primary)
+    closed_higher = _closed_candles(higher)
+    if len(closed_primary) < 60 or len(closed_higher) < 60:
+        return []
+    return [
+        _trend_continuation(closed_primary, closed_higher),
+        _breakout_volatility_expansion(closed_primary, closed_higher),
+        _range_mean_reversion(closed_primary, closed_higher),
+    ]
+
+
 def _trend_continuation(primary: list[StrategyCandle], higher: list[StrategyCandle]) -> StrategyResult:
     strategy = "trend_continuation"
     primary_emas = ema_set(primary)

@@ -84,6 +84,7 @@ button:disabled {
   border-radius: 8px;
   color: var(--muted);
   padding: 11px 12px;
+  text-decoration: none;
 }
 
 .nav-item.active {
@@ -457,6 +458,126 @@ button:disabled {
   gap: 12px;
 }
 
+.backtest-grid {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.control-panel,
+.results-panel,
+.table-panel,
+.metric-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(11, 17, 28, 0.94);
+}
+
+.control-panel {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+
+.control-panel label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.control-panel .select,
+.control-panel .input {
+  width: 100%;
+}
+
+.results-panel {
+  min-width: 0;
+  padding: 18px;
+}
+
+.backtest-results {
+  display: grid;
+  gap: 16px;
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.metric-card {
+  padding: 16px;
+}
+
+.metric-card span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+
+.metric-card strong {
+  color: #f8fafc;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.table-panel {
+  padding: 16px;
+}
+
+.table-panel h2 {
+  color: #f8fafc;
+  font-size: 15px;
+  margin: 0 0 12px;
+}
+
+.session-grid,
+.trade-table {
+  display: grid;
+  gap: 8px;
+}
+
+.session-row,
+.trade-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 80px 100px;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #0a101b;
+  padding: 10px 12px;
+  color: #d8e3f2;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.session-row em,
+.trade-row em {
+  color: var(--muted);
+  font-style: normal;
+  text-align: right;
+}
+
+.session-row strong,
+.trade-row strong {
+  text-align: right;
+}
+
+.positive {
+  color: #86efac;
+}
+
+.negative {
+  color: #fda4af;
+}
+
 @media (max-width: 1120px) {
   .terminal-shell {
     grid-template-columns: 1fr;
@@ -472,6 +593,10 @@ button:disabled {
 
   .signal-sidebar {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .backtest-grid {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -502,6 +627,22 @@ button:disabled {
 
   .signal-sidebar {
     grid-template-columns: 1fr;
+  }
+
+  .metric-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .session-row,
+  .trade-row {
+    grid-template-columns: 1fr;
+  }
+
+  .session-row strong,
+  .trade-row strong,
+  .session-row em,
+  .trade-row em {
+    text-align: left;
   }
 
   .score-readout strong {
