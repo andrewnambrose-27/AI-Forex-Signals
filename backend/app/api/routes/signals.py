@@ -8,6 +8,7 @@ from app.models.candle import Candle
 from app.models.signal import Signal
 from app.schemas.signal import SignalComponentRead, SignalEvaluateRequest, SignalEvaluationRead, SignalRead, SignalRequest
 from app.services.ig_client import IGClient, IGClientError, parse_ig_candle
+from app.services.economic_calendar import evaluate_pair_news_risk
 from app.services.signal_engine import StrategyEvaluation, StrategyResult, evaluate_strategies, generate_signal
 
 router = APIRouter(prefix="/signals", tags=["signals"])
@@ -31,6 +32,18 @@ def evaluate_signal(payload: SignalEvaluateRequest, db: DbSession) -> SignalEval
         minimum_score=payload.minimum_score,
         candles_by_timeframe=candles_by_timeframe,
     )
+    risk = evaluate_pair_news_risk(db, payload.pair)
+    if risk.blocked:
+        evaluation.direction = "NONE"
+        evaluation.status = "filtered"
+        evaluation.filters_failed.append("high_impact_news_window")
+        if risk.event:
+            evaluation.reasons.insert(
+                0,
+                f"Blocked by high-impact {risk.event.currency} event: {risk.event.title} at {risk.event.event_time.isoformat()}",
+            )
+        elif risk.reason:
+            evaluation.reasons.insert(0, risk.reason)
     return _evaluation_response(evaluation)
 
 

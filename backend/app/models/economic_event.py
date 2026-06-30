@@ -13,6 +13,7 @@ class EconomicEvent(Base):
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     provider: Mapped[str] = mapped_column(String(32), default="manual", nullable=False, index=True)
     external_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    country: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
     currency: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     impact: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
