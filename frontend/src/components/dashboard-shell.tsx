@@ -10,6 +10,13 @@ import { SignalPanel } from "./signal-panel";
 
 const watchlist = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF"];
 const timeframes: Timeframe[] = ["5m", "15m", "1h", "4h", "1d"];
+const autoRefreshMsByTimeframe: Record<Timeframe, number> = {
+  "5m": 30000,
+  "15m": 45000,
+  "1h": 60000,
+  "4h": 120000,
+  "1d": 300000
+};
 
 export function DashboardShell() {
   const [symbol, setSymbol] = useState("EURUSD");
@@ -20,6 +27,7 @@ export function DashboardShell() {
     dataSource: "mock"
   }));
   const [isLoading, setIsLoading] = useState(false);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const chartData = chartResult.chartData;
   const latestSignal = useMemo(() => getLatestSignal(symbol, timeframe, chartData), [symbol, timeframe, chartData]);
 
@@ -31,6 +39,7 @@ export function DashboardShell() {
       .then((result) => {
         if (!isCancelled) {
           setChartResult(result);
+          setLastUpdatedAt(new Date());
         }
       })
       .finally(() => {
@@ -43,6 +52,14 @@ export function DashboardShell() {
       isCancelled = true;
     };
   }, [symbol, timeframe, refreshCount]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setRefreshCount((value) => value + 1);
+    }, autoRefreshMsByTimeframe[timeframe]);
+
+    return () => window.clearInterval(intervalId);
+  }, [timeframe]);
 
   return (
     <div className="terminal-shell">
@@ -102,6 +119,8 @@ export function DashboardShell() {
 
         <div className={`data-status ${chartResult.dataSource === "ig" ? "live" : "mock"}`}>
           <span>{chartResult.dataSource === "ig" ? "Connected to IG demo candles" : "Using mock fallback data"}</span>
+          <span>Auto-refresh {Math.round(autoRefreshMsByTimeframe[timeframe] / 1000)}s</span>
+          {lastUpdatedAt ? <span>Updated {lastUpdatedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span> : null}
           {chartResult.error ? <span>{chartResult.error}</span> : null}
         </div>
 
