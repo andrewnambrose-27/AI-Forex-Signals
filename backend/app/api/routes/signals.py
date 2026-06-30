@@ -6,9 +6,26 @@ from sqlalchemy import select
 from app.api.deps import DbSession
 from app.models.candle import Candle
 from app.models.signal import Signal
-from app.schemas.signal import SignalComponentRead, SignalEvaluateRequest, SignalEvaluationRead, SignalRead, SignalRequest
+from app.models.signal_component import SignalComponent
+from app.schemas.signal import (
+    SignalComponentRead,
+    SignalEvaluateRequest,
+    SignalEvaluationRead,
+    SignalRead,
+    SignalRequest,
+    SignalScoreComponentRead,
+    SignalScoringSettingsRead,
+    SignalScoringSettingsUpdate,
+)
 from app.services.ig_client import IGClient, IGClientError, parse_ig_candle
 from app.services.economic_calendar import evaluate_pair_news_risk
+from app.services.signal_scoring import (
+    SCORE_DISCLAIMER,
+    ScoreComponent,
+    apply_configurable_scoring,
+    get_scoring_settings,
+    update_scoring_settings,
+)
 from app.services.signal_engine import StrategyEvaluation, StrategyResult, evaluate_strategies, generate_signal
 
 router = APIRouter(prefix="/signals", tags=["signals"])
@@ -29,12 +46,11 @@ def evaluate_signal(payload: SignalEvaluateRequest, db: DbSession) -> SignalEval
         epic=payload.epic,
         pair=payload.pair,
         timeframe=payload.timeframe,
-        minimum_score=payload.minimum_score,
+        minimum_score=0,
         candles_by_timeframe=candles_by_timeframe,
     )
     risk = evaluate_pair_news_risk(db, payload.pair)
     if risk.blocked:
-        evaluation.direction = "NONE"
         evaluation.status = "filtered"
         evaluation.filters_failed.append("high_impact_news_window")
         if risk.event:
@@ -44,13 +60,49 @@ def evaluate_signal(payload: SignalEvaluateRequest, db: DbSession) -> SignalEval
             )
         elif risk.reason:
             evaluation.reasons.insert(0, risk.reason)
+    scoring = apply_configurable_scoring(
+        evaluation,
+        settings=get_scoring_settings(db),
+        minimum_score_override=payload.minimum_score,
+        news_blocked=risk.blocked,
+    )
+    evaluation.score = scoring.score
+    evaluation.reasons = [*scoring.reasons, *evaluation.reasons]
+    evaluation.filters_passed = [*evaluation.filters_passed, *scoring.filters_passed]
+    evaluation.filters_failed = [*evaluation.filters_failed, *scoring.filters_failed]
+    if evaluation.direction not in {"BUY", "SELL"}:
+        evaluation.status = "filtered"
+    elif scoring.score < scoring.minimum_score:
+        evaluation.status = "filtered"
+        evaluation.filters_failed.append("minimum_score_not_met")
+    else:
+        evaluation.status = "active"
+    _store_signal(db, evaluation, scoring.components)
     return _evaluation_response(evaluation)
 
 
 @router.get("/history", response_model=list[SignalRead])
-def signal_history(db: DbSession, limit: int = 100) -> list[Signal]:
+def signal_history(db: DbSession, limit: int = 100, status: str | None = None) -> list[Signal]:
     query = select(Signal).order_by(Signal.created_at.desc()).limit(min(limit, 500))
+    if status:
+        query = query.where(Signal.status == status)
     return list(db.scalars(query))
+
+
+@router.get("/filtered", response_model=list[SignalRead])
+def filtered_signals(db: DbSession, limit: int = 100) -> list[Signal]:
+    query = select(Signal).where(Signal.status == "filtered").order_by(Signal.created_at.desc()).limit(min(limit, 500))
+    return list(db.scalars(query))
+
+
+@router.get("/scoring-settings", response_model=SignalScoringSettingsRead)
+def scoring_settings(db: DbSession) -> dict:
+    return get_scoring_settings(db)
+
+
+@router.put("/scoring-settings", response_model=SignalScoringSettingsRead)
+def update_scoring_settings_route(payload: SignalScoringSettingsUpdate, db: DbSession) -> dict:
+    return update_scoring_settings(db, payload.model_dump(exclude_unset=True))
 
 
 def _load_strategy_candles(db: DbSession, epic: str, timeframe: str, limit: int) -> list[Candle]:
@@ -141,6 +193,8 @@ def _evaluation_response(evaluation: StrategyEvaluation) -> SignalEvaluationRead
         filters_passed=evaluation.filters_passed,
         filters_failed=evaluation.filters_failed,
         components=[_component_response(component) for component in evaluation.components],
+        score_components=[_score_component_response(component) for component in getattr(evaluation, "score_components", [])],
+        score_disclaimer=SCORE_DISCLAIMER,
     )
 
 
@@ -154,3 +208,55 @@ def _component_response(component: StrategyResult) -> SignalComponentRead:
         filters_passed=component.filters_passed,
         filters_failed=component.filters_failed,
     )
+
+
+def _score_component_response(component: ScoreComponent) -> SignalScoreComponentRead:
+    return SignalScoreComponentRead(
+        name=component.name,
+        category=component.category,
+        score=component.score,
+        max_score=component.max_score,
+        passed=component.passed,
+        details=component.details,
+        raw_data=component.raw_data,
+    )
+
+
+def _store_signal(db: DbSession, evaluation: StrategyEvaluation, components: list[ScoreComponent]) -> Signal | None:
+    if evaluation.direction not in {"BUY", "SELL"}:
+        evaluation.score_components = components
+        return None
+
+    signal = Signal(
+        pair=evaluation.pair,
+        epic=evaluation.epic,
+        direction=evaluation.direction,
+        timeframe=evaluation.timeframe,
+        score=evaluation.score,
+        status=evaluation.status,
+        entry_reference_price=evaluation.entry_reference_price,
+        suggested_stop=evaluation.suggested_stop,
+        suggested_target=evaluation.suggested_target,
+        risk_reward_ratio=evaluation.risk_reward_ratio,
+        reasons=evaluation.reasons,
+        filters_passed=evaluation.filters_passed,
+        filters_failed=evaluation.filters_failed,
+    )
+    db.add(signal)
+    db.flush()
+    for component in components:
+        db.add(
+            SignalComponent(
+                signal_id=signal.id,
+                name=component.name,
+                category=component.category,
+                score_impact=component.score,
+                passed=component.passed,
+                details=component.details,
+                raw_data={**component.raw_data, "max_score": component.max_score},
+            )
+        )
+    db.commit()
+    db.refresh(signal)
+    evaluation.score_components = components
+    return signal

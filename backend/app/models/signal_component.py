@@ -20,3 +20,13 @@ class SignalComponent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     signal = relationship("Signal", back_populates="components")
+
+    @property
+    def score(self) -> int:
+        return self.score_impact
+
+    @property
+    def max_score(self) -> int:
+        if isinstance(self.raw_data, dict):
+            return int(self.raw_data.get("max_score", self.score_impact))
+        return self.score_impact

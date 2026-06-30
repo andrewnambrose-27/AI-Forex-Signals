@@ -48,6 +48,7 @@ class StrategyEvaluation:
     filters_passed: list[str]
     filters_failed: list[str]
     components: list[StrategyResult]
+    score_components: list[Any] = field(default_factory=list)
 
 
 def generate_signal(payload: SignalRequest) -> SignalRead:

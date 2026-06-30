@@ -13,7 +13,7 @@ class SignalEvaluateRequest(BaseModel):
     epic: str = Field(..., examples=["CS.D.EURUSD.MINI.IP"])
     pair: str = Field(..., examples=["EURUSD"])
     timeframe: str = Field("1h", examples=["5m", "15m", "1h", "4h", "1d"])
-    minimum_score: int = Field(60, ge=0, le=100)
+    minimum_score: int | None = Field(None, ge=0, le=100)
 
 
 class SignalComponentRead(BaseModel):
@@ -24,6 +24,28 @@ class SignalComponentRead(BaseModel):
     reasons: list[str] = []
     filters_passed: list[str] = []
     filters_failed: list[str] = []
+
+
+class SignalScoreComponentRead(BaseModel):
+    name: str
+    category: str
+    score: int
+    max_score: int
+    passed: bool
+    details: str | None = None
+    raw_data: dict | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class SignalScoringSettingsRead(BaseModel):
+    minimum_score: int = 80
+    weights: dict[str, int]
+
+
+class SignalScoringSettingsUpdate(BaseModel):
+    minimum_score: int | None = Field(None, ge=0, le=100)
+    weights: dict[str, int] | None = None
 
 
 class SignalRead(BaseModel):
@@ -40,6 +62,7 @@ class SignalRead(BaseModel):
     reasons: list[str] = []
     filters_passed: list[str] = []
     filters_failed: list[str] = []
+    components: list[SignalScoreComponentRead] = []
     created_at: datetime | None = None
 
     model_config = {"from_attributes": True}
@@ -61,3 +84,5 @@ class SignalEvaluationRead(BaseModel):
     filters_passed: list[str] = []
     filters_failed: list[str] = []
     components: list[SignalComponentRead] = []
+    score_components: list[SignalScoreComponentRead] = []
+    score_disclaimer: str = "Signal score is a rules-based quality score, not a guaranteed win probability."
