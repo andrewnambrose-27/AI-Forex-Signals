@@ -32,6 +32,8 @@ export function ChartPanel({ symbol, timeframe, dataSource, epic, candles, ema20
   const ema20Ref = useRef<ISeriesApi<"Line"> | null>(null);
   const ema50Ref = useRef<ISeriesApi<"Line"> | null>(null);
   const ema200Ref = useRef<ISeriesApi<"Line"> | null>(null);
+  const previousCandleCountRef = useRef(0);
+  const previousMarketKeyRef = useRef("");
 
   useEffect(() => {
     if (!chartContainerRef.current) {
@@ -105,8 +107,13 @@ export function ChartPanel({ symbol, timeframe, dataSource, epic, candles, ema20
     ema20Ref.current?.setData(ema20);
     ema50Ref.current?.setData(ema50);
     ema200Ref.current?.setData(ema200);
-    chartRef.current?.timeScale().fitContent();
-  }, [candles, ema20, ema50, ema200, markers]);
+    const marketKey = `${symbol}:${timeframe}`;
+    if (previousCandleCountRef.current !== candles.length || previousMarketKeyRef.current !== marketKey) {
+      chartRef.current?.timeScale().fitContent();
+      previousCandleCountRef.current = candles.length;
+      previousMarketKeyRef.current = marketKey;
+    }
+  }, [symbol, timeframe, candles, ema20, ema50, ema200, markers]);
 
   return (
     <section className="chart-panel">

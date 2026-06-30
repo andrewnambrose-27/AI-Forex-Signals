@@ -4,8 +4,8 @@ import { Activity, BarChart3, History, ListPlus, Radar, ShieldAlert } from "luci
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
-import { loadChartData, type LiveChartLoadResult } from "@/lib/api";
-import { getLatestSignal, getMockChartData, type Timeframe } from "@/lib/mock-market-data";
+import { fetchLiveQuote, loadChartData, type LiveChartLoadResult, type LiveQuote } from "@/lib/api";
+import { getLatestSignal, getMockChartData, updateChartDataWithLivePrice, type Timeframe } from "@/lib/mock-market-data";
 import { ChartPanel } from "./chart-panel";
 import { SignalPanel } from "./signal-panel";
 
@@ -18,6 +18,7 @@ const autoRefreshMsByTimeframe: Record<Timeframe, number> = {
   "4h": 120000,
   "1d": 300000
 };
+const quoteRefreshMs = 5000;
 
 export function DashboardShell() {
   const [symbol, setSymbol] = useState("EURUSD");
@@ -29,6 +30,8 @@ export function DashboardShell() {
   }));
   const [isLoading, setIsLoading] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+  const [latestQuote, setLatestQuote] = useState<LiveQuote | null>(null);
+  const [quoteUpdatedAt, setQuoteUpdatedAt] = useState<Date | null>(null);
   const chartData = chartResult.chartData;
   const latestSignal = useMemo(() => getLatestSignal(symbol, timeframe, chartData), [symbol, timeframe, chartData]);
 
@@ -41,6 +44,8 @@ export function DashboardShell() {
         if (!isCancelled) {
           setChartResult(result);
           setLastUpdatedAt(new Date());
+          setLatestQuote(null);
+          setQuoteUpdatedAt(null);
         }
       })
       .finally(() => {
@@ -53,6 +58,45 @@ export function DashboardShell() {
       isCancelled = true;
     };
   }, [symbol, timeframe, refreshCount]);
+
+  useEffect(() => {
+    if (chartResult.dataSource !== "ig") {
+      return;
+    }
+
+    let isCancelled = false;
+
+    async function refreshQuote() {
+      try {
+        const quote = await fetchLiveQuote(symbol, chartResult.epic);
+        if (isCancelled) {
+          return;
+        }
+        setLatestQuote(quote);
+        setQuoteUpdatedAt(new Date());
+        setChartResult((current) => {
+          if (current.dataSource !== "ig") {
+            return current;
+          }
+          return {
+            ...current,
+            epic: current.epic ?? quote.epic,
+            chartData: updateChartDataWithLivePrice(current.chartData, symbol, timeframe, quote.mid)
+          };
+        });
+      } catch {
+        // Historical candle data remains visible if a transient quote poll fails.
+      }
+    }
+
+    refreshQuote();
+    const intervalId = window.setInterval(refreshQuote, quoteRefreshMs);
+
+    return () => {
+      isCancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [chartResult.dataSource, chartResult.epic, symbol, timeframe]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -120,6 +164,9 @@ export function DashboardShell() {
 
         <div className={`data-status ${chartResult.dataSource === "ig" ? "live" : "mock"}`}>
           <span>{chartResult.dataSource === "ig" ? "Connected to IG demo candles" : "Using mock fallback data"}</span>
+          {latestQuote ? <span>Live mid {latestQuote.mid.toFixed(symbol.endsWith("JPY") ? 3 : 5)}</span> : null}
+          {latestQuote ? <span>Bid {latestQuote.bid.toFixed(symbol.endsWith("JPY") ? 3 : 5)} / Ask {latestQuote.offer.toFixed(symbol.endsWith("JPY") ? 3 : 5)}</span> : null}
+          {quoteUpdatedAt ? <span>Quote {quoteUpdatedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span> : null}
           <span>Auto-refresh {Math.round(autoRefreshMsByTimeframe[timeframe] / 1000)}s</span>
           {lastUpdatedAt ? <span>Updated {lastUpdatedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span> : null}
           {chartResult.error ? <span>{chartResult.error}</span> : null}

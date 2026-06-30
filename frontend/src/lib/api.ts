@@ -42,6 +42,11 @@ export type MarketSearchResult = {
   instrumentName?: string;
   marketName?: string;
   expiry?: string;
+  bid?: number | null;
+  offer?: number | null;
+  marketStatus?: string;
+  updateTime?: string;
+  updateTimeUTC?: string;
 };
 
 export type BackendCandle = {
@@ -63,6 +68,15 @@ export type LiveChartLoadResult = {
   dataSource: "ig" | "mock";
   epic?: string;
   error?: string;
+};
+
+export type LiveQuote = {
+  epic: string;
+  bid: number;
+  offer: number;
+  mid: number;
+  marketStatus?: string;
+  updateTime?: string;
 };
 
 export type BacktestRequest = {
@@ -180,6 +194,25 @@ export async function fetchCandles(epic: string, resolution: string, limit: numb
   }
 
   return response.json();
+}
+
+export async function fetchLiveQuote(symbol: string, epic?: string): Promise<LiveQuote> {
+  const markets = await searchMarkets(`${symbol.slice(0, 3)}/${symbol.slice(3, 6)}`);
+  const market = (epic ? markets.find((item) => item.epic === epic) : undefined) ?? chooseMarket(symbol, markets);
+  if (!market?.epic || market.bid == null || market.offer == null) {
+    throw new Error(`No live quote available for ${symbol}`);
+  }
+
+  const bid = Number(market.bid);
+  const offer = Number(market.offer);
+  return {
+    epic: market.epic,
+    bid,
+    offer,
+    mid: (bid + offer) / 2,
+    marketStatus: market.marketStatus,
+    updateTime: market.updateTimeUTC ?? market.updateTime
+  };
 }
 
 export async function runBacktest(payload: BacktestRequest): Promise<BacktestResult> {

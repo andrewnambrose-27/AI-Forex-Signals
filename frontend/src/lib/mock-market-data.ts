@@ -168,6 +168,23 @@ export function buildChartDataFromCandles(symbol: string, timeframe: Timeframe, 
   };
 }
 
+export function updateChartDataWithLivePrice(dataSet: ChartDataSet, symbol: string, timeframe: Timeframe, price: number): ChartDataSet {
+  const candles = [...dataSet.candles];
+  const latest = candles[candles.length - 1];
+  if (!latest) {
+    return dataSet;
+  }
+
+  candles[candles.length - 1] = {
+    ...latest,
+    high: Math.max(Number(latest.high), price),
+    low: Math.min(Number(latest.low), price),
+    close: Number(price.toFixed(symbol.endsWith("JPY") ? 3 : 5))
+  };
+
+  return buildChartDataFromCandles(symbol, timeframe, candles);
+}
+
 export function getLatestSignal(symbol: string, timeframe: Timeframe, dataSet: ChartDataSet) {
   const latest = dataSet.signals[dataSet.signals.length - 1];
   const lastClose = Number(dataSet.candles[dataSet.candles.length - 1]?.close ?? 0);
