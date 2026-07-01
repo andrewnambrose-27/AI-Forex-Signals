@@ -27,6 +27,7 @@ type ChartPanelProps = {
   requestedCandles?: number;
   loadedCandles?: number;
   candleWarning?: string | null;
+  livePreviewCandle?: CandlestickData | null;
 };
 
 export function ChartPanel({
@@ -42,7 +43,8 @@ export function ChartPanel({
   markers,
   requestedCandles,
   loadedCandles,
-  candleWarning
+  candleWarning,
+  livePreviewCandle
 }: ChartPanelProps) {
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -136,6 +138,12 @@ export function ChartPanel({
       previousViewportKeyRef.current = viewportKey;
     }
   }, [dataSource, epic, symbol, timeframe, candles, ema20, ema50, ema200, markers]);
+
+  useEffect(() => {
+    if (livePreviewCandle) {
+      candleSeriesRef.current?.update(livePreviewCandle);
+    }
+  }, [livePreviewCandle]);
 
   return (
     <section className="chart-panel">

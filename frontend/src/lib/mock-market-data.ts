@@ -24,6 +24,10 @@ export type ChartDataSet = {
 
 export const EMA_200_READY_CANDLES = 220;
 
+export type LiveCandleUpdate = CandlestickData & {
+  isClosed: boolean;
+};
+
 const timeframeSeconds: Record<Timeframe, number> = {
   "5m": 300,
   "15m": 900,
@@ -187,6 +191,35 @@ export function updateChartDataWithLivePrice(dataSet: ChartDataSet, symbol: stri
     low: Math.min(Number(latest.low), price),
     close: Number(price.toFixed(symbol.endsWith("JPY") ? 3 : 5))
   };
+
+  return {
+    ...dataSet,
+    candles
+  };
+}
+
+export function applyStreamedCandleUpdate(dataSet: ChartDataSet, symbol: string, timeframe: Timeframe, update: LiveCandleUpdate): ChartDataSet {
+  const candles = [...dataSet.candles];
+  const updateTime = Number(update.time);
+  const existingIndex = candles.findIndex((candle) => Number(candle.time) === updateTime);
+  const nextCandle: CandlestickData = {
+    time: update.time,
+    open: update.open,
+    high: update.high,
+    low: update.low,
+    close: update.close
+  };
+
+  if (existingIndex >= 0) {
+    candles[existingIndex] = nextCandle;
+  } else {
+    candles.push(nextCandle);
+    candles.sort((left, right) => Number(left.time) - Number(right.time));
+  }
+
+  if (update.isClosed) {
+    return buildChartDataFromCandles(symbol, timeframe, candles);
+  }
 
   return {
     ...dataSet,

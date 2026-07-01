@@ -8,6 +8,7 @@ import {
 } from "./mock-market-data";
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://ai-forex-signals.onrender.com";
+const CANDLE_WARNING_TOLERANCE = 10;
 
 export type Signal = {
   id?: number | null;
@@ -92,6 +93,35 @@ export type LiveQuote = {
   marketStatus?: string;
   updateTime?: string;
 };
+
+export type StreamStatus = "idle" | "historical_loaded" | "connected" | "reconnecting" | "failed";
+
+export type StreamCandleUpdate = {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  isClosed: boolean;
+};
+
+export type PriceStreamMessage =
+  | {
+      type: "stream_status";
+      status: Exclude<StreamStatus, "idle" | "historical_loaded" | "reconnecting">;
+      symbol: string;
+      timeframe: Timeframe;
+      message?: string;
+    }
+  | {
+      type: "candle_update";
+      symbol: string;
+      timeframe: Timeframe;
+      candle: StreamCandleUpdate;
+      bid?: number;
+      offer?: number;
+      mid?: number;
+    };
 
 export type BacktestRequest = {
   epic: string;
@@ -227,12 +257,25 @@ export async function fetchCandles(epic: string, resolution: string, limit: numb
       requested_count: limit,
       loaded_count: payload.length,
       candles: payload,
-      warning: payload.length < limit ? `Loaded ${payload.length} candles, fewer than the ${limit} requested.` : null,
+      warning: payload.length + CANDLE_WARNING_TOLERANCE < limit ? `Loaded ${payload.length} candles, fewer than the ${limit} requested.` : null,
       dropped_incomplete_current_candle: false
     };
   }
 
   return payload;
+}
+
+export function getPriceWebSocketUrl(symbol: string, timeframe: Timeframe, epic?: string): string {
+  const apiUrl = new URL(API_BASE_URL);
+  apiUrl.protocol = apiUrl.protocol === "https:" ? "wss:" : "ws:";
+  apiUrl.pathname = "/ws/prices";
+  apiUrl.search = "";
+  apiUrl.searchParams.set("symbol", symbol);
+  apiUrl.searchParams.set("timeframe", timeframe);
+  if (epic) {
+    apiUrl.searchParams.set("epic", epic);
+  }
+  return apiUrl.toString();
 }
 
 export async function fetchLiveQuote(symbol: string, epic?: string): Promise<LiveQuote> {

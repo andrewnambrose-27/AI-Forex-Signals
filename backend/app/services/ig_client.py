@@ -42,6 +42,7 @@ class IGSession:
     cst: str
     security_token: str
     account_id: str | None = None
+    lightstreamer_endpoint: str | None = None
 
 
 class IGClient:
@@ -72,6 +73,9 @@ class IGClient:
 
     def get_accounts(self) -> dict[str, Any]:
         return self._request("GET", "/accounts", version="1")
+
+    def get_streaming_session(self) -> IGSession:
+        return self._session or self._login()
 
     def get_sanitized_accounts(self) -> list[dict[str, Any]]:
         payload = self.get_accounts()
@@ -111,8 +115,14 @@ class IGClient:
         if not cst or not security_token:
             raise IGCredentialsError("IG login did not return session tokens", details=self._safe_json(response))
 
-        account_id = self.settings.ig_account_id or self._safe_json(response).get("currentAccountId")
-        self._session = IGSession(cst=cst, security_token=security_token, account_id=account_id)
+        payload = self._safe_json(response)
+        account_id = self.settings.ig_account_id or payload.get("currentAccountId")
+        self._session = IGSession(
+            cst=cst,
+            security_token=security_token,
+            account_id=account_id,
+            lightstreamer_endpoint=payload.get("lightstreamerEndpoint"),
+        )
         return self._session
 
     def _request(

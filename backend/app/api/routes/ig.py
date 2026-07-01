@@ -15,6 +15,7 @@ from app.services.ig_client import (
 )
 
 router = APIRouter(tags=["ig"])
+CANDLE_WARNING_TOLERANCE = 10
 
 
 def get_ig_client() -> IGClient:
@@ -115,7 +116,7 @@ def fetch_candles(
     candles = sorted(candles, key=lambda candle: candle.opened_at)
     candles, dropped_incomplete = _drop_incomplete_current_candle(candles, normalized_resolution)
     warning = None
-    if len(candles) < requested_count:
+    if len(candles) + CANDLE_WARNING_TOLERANCE < requested_count:
         warning = f"IG returned {len(candles)} closed candles for {normalized_resolution}, fewer than the {requested_count} requested."
     return _candle_response(
         epic=epic,

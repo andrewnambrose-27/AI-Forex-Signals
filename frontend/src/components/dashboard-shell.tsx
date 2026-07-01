@@ -3,9 +3,17 @@
 import { Activity, BarChart3, History, ListPlus, Radar, ShieldAlert } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import type { CandlestickData, Time } from "lightweight-charts";
 
-import { fetchLiveQuote, loadChartData, type LiveChartLoadResult, type LiveQuote } from "@/lib/api";
-import { getLatestSignal, getMockChartData, updateChartDataWithLivePrice, type Timeframe } from "@/lib/mock-market-data";
+import {
+  getPriceWebSocketUrl,
+  loadChartData,
+  type LiveChartLoadResult,
+  type LiveQuote,
+  type PriceStreamMessage,
+  type StreamStatus
+} from "@/lib/api";
+import { applyStreamedCandleUpdate, getLatestSignal, getMockChartData, type LiveCandleUpdate, type Timeframe } from "@/lib/mock-market-data";
 import { ChartPanel } from "./chart-panel";
 import { SignalPanel } from "./signal-panel";
 
@@ -18,7 +26,6 @@ const autoRefreshMsByTimeframe: Record<Timeframe, number> = {
   "4h": 120000,
   "1d": 300000
 };
-const quoteRefreshMs = 5000;
 
 export function DashboardShell() {
   const [symbol, setSymbol] = useState("EURUSD");
@@ -32,6 +39,9 @@ export function DashboardShell() {
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [latestQuote, setLatestQuote] = useState<LiveQuote | null>(null);
   const [quoteUpdatedAt, setQuoteUpdatedAt] = useState<Date | null>(null);
+  const [streamStatus, setStreamStatus] = useState<StreamStatus>("idle");
+  const [streamMessage, setStreamMessage] = useState<string | null>(null);
+  const [livePreviewCandle, setLivePreviewCandle] = useState<CandlestickData | null>(null);
   const chartData = chartResult.chartData;
   const latestSignal = useMemo(() => getLatestSignal(symbol, timeframe, chartData), [symbol, timeframe, chartData]);
 
@@ -46,6 +56,9 @@ export function DashboardShell() {
           setLastUpdatedAt(new Date());
           setLatestQuote(null);
           setQuoteUpdatedAt(null);
+          setLivePreviewCandle(null);
+          setStreamMessage(null);
+          setStreamStatus(result.dataSource === "ig" ? "historical_loaded" : "idle");
         }
       })
       .finally(() => {
@@ -60,41 +73,83 @@ export function DashboardShell() {
   }, [symbol, timeframe, refreshCount]);
 
   useEffect(() => {
-    if (chartResult.dataSource !== "ig") {
+    if (chartResult.dataSource !== "ig" || !chartResult.epic) {
       return;
     }
 
-    let isCancelled = false;
+    let socket: WebSocket | null = null;
+    let reconnectTimer: number | null = null;
+    let retryCount = 0;
+    let shouldReconnect = true;
 
-    async function refreshQuote() {
-      try {
-        const quote = await fetchLiveQuote(symbol, chartResult.epic);
-        if (isCancelled) {
+    function connect() {
+      setStreamStatus(retryCount === 0 ? "historical_loaded" : "reconnecting");
+      socket = new WebSocket(getPriceWebSocketUrl(symbol, timeframe, chartResult.epic));
+
+      socket.onmessage = (event) => {
+        const message = JSON.parse(event.data) as PriceStreamMessage;
+        if (message.type === "stream_status") {
+          setStreamStatus(message.status);
+          setStreamMessage(message.message ?? null);
+          if (message.status === "failed") {
+            shouldReconnect = false;
+            socket?.close();
+          }
           return;
         }
-        setLatestQuote(quote);
-        setQuoteUpdatedAt(new Date());
-        setChartResult((current) => {
-          if (current.dataSource !== "ig") {
-            return current;
-          }
-          return {
-            ...current,
-            epic: current.epic ?? quote.epic,
-            chartData: updateChartDataWithLivePrice(current.chartData, symbol, timeframe, quote.mid)
-          };
-        });
-      } catch {
-        // Historical candle data remains visible if a transient quote poll fails.
-      }
+
+        const streamedCandle: LiveCandleUpdate = {
+          time: message.candle.time as Time,
+          open: message.candle.open,
+          high: message.candle.high,
+          low: message.candle.low,
+          close: message.candle.close,
+          isClosed: message.candle.isClosed
+        };
+        setLivePreviewCandle(streamedCandle);
+        setChartResult((current) => ({
+          ...current,
+          chartData: applyStreamedCandleUpdate(current.chartData, symbol, timeframe, streamedCandle)
+        }));
+        if (message.mid != null && message.bid != null && message.offer != null) {
+          setLatestQuote({
+            epic: chartResult.epic ?? "",
+            bid: message.bid,
+            offer: message.offer,
+            mid: message.mid,
+            updateTime: new Date().toISOString()
+          });
+          setQuoteUpdatedAt(new Date());
+        }
+      };
+
+      socket.onopen = () => {
+        retryCount = 0;
+        setStreamMessage(null);
+      };
+
+      socket.onclose = () => {
+        if (!shouldReconnect) {
+          return;
+        }
+        retryCount += 1;
+        setStreamStatus("reconnecting");
+        reconnectTimer = window.setTimeout(connect, Math.min(10000, 1000 * retryCount));
+      };
+
+      socket.onerror = () => {
+        setStreamStatus("reconnecting");
+      };
     }
 
-    refreshQuote();
-    const intervalId = window.setInterval(refreshQuote, quoteRefreshMs);
+    connect();
 
     return () => {
-      isCancelled = true;
-      window.clearInterval(intervalId);
+      shouldReconnect = false;
+      if (reconnectTimer) {
+        window.clearTimeout(reconnectTimer);
+      }
+      socket?.close();
     };
   }, [chartResult.dataSource, chartResult.epic, symbol, timeframe]);
 
@@ -164,6 +219,7 @@ export function DashboardShell() {
 
         <div className={`data-status ${chartResult.dataSource === "ig" ? "live" : "mock"}`}>
           <span>{chartResult.dataSource === "ig" ? "Connected to IG demo candles" : "Using mock fallback data"}</span>
+          {chartResult.dataSource === "ig" ? <span>{streamStatusLabel(streamStatus)}</span> : null}
           {latestQuote ? <span>Live mid {latestQuote.mid.toFixed(symbol.endsWith("JPY") ? 3 : 5)}</span> : null}
           {latestQuote ? <span>Bid {latestQuote.bid.toFixed(symbol.endsWith("JPY") ? 3 : 5)} / Ask {latestQuote.offer.toFixed(symbol.endsWith("JPY") ? 3 : 5)}</span> : null}
           {quoteUpdatedAt ? <span>Quote {quoteUpdatedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span> : null}
@@ -175,6 +231,7 @@ export function DashboardShell() {
           {chartResult.droppedIncompleteCurrentCandle ? <span>Current incomplete candle excluded</span> : null}
           {lastUpdatedAt ? <span>Updated {lastUpdatedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span> : null}
           {chartResult.candleWarning ? <span>{chartResult.candleWarning}</span> : null}
+          {streamMessage ? <span>{streamMessage}</span> : null}
           {chartResult.error ? <span>{chartResult.error}</span> : null}
         </div>
 
@@ -193,10 +250,22 @@ export function DashboardShell() {
             requestedCandles={chartResult.requestedCandles}
             loadedCandles={chartResult.loadedCandles}
             candleWarning={chartResult.candleWarning}
+            livePreviewCandle={livePreviewCandle}
           />
           <SignalPanel signal={latestSignal} />
         </div>
       </main>
     </div>
   );
+}
+
+function streamStatusLabel(status: StreamStatus): string {
+  const labels: Record<StreamStatus, string> = {
+    idle: "Streaming idle",
+    historical_loaded: "Historical loaded",
+    connected: "Streaming connected",
+    reconnecting: "Streaming reconnecting",
+    failed: "Streaming failed"
+  };
+  return labels[status];
 }
