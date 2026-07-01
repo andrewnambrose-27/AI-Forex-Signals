@@ -98,7 +98,7 @@ def fetch_candles(
             warning = (
                 "Using stored IG candles because IG is not configured."
                 if isinstance(exc, IGConfigurationError)
-                else f"Using stored IG candles because the latest IG request failed: {str(exc)}."
+                else f"Using stored IG candle history because the latest IG REST request failed: {str(exc)}."
             )
             return _candle_response(
                 epic=epic,

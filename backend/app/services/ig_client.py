@@ -37,6 +37,11 @@ class IGConfigurationError(IGClientError):
     message = "IG connector is not configured"
 
 
+class IGRequestRejectedError(IGClientError):
+    status_code = 502
+    message = "IG rejected the request"
+
+
 @dataclass
 class IGSession:
     cst: str
@@ -170,9 +175,9 @@ class IGClient:
         if response.status_code == 429:
             raise IGRateLimitError(details=self._safe_json(response))
         if response.status_code == 401:
-            raise IGSessionExpiredError(details=self._safe_json(response))
+            raise IGSessionExpiredError("IG session expired or was rejected", details=self._safe_json(response))
         if response.status_code in {400, 403}:
-            raise IGCredentialsError(details=self._safe_json(response))
+            raise IGRequestRejectedError(f"IG rejected the request with HTTP {response.status_code}", details=self._safe_json(response))
         if response.is_error:
             raise IGClientError(f"IG returned HTTP {response.status_code}", details=self._safe_json(response))
 
