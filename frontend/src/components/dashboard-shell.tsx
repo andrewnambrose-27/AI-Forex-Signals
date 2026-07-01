@@ -19,13 +19,6 @@ import { SignalPanel } from "./signal-panel";
 
 const watchlist = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF"];
 const timeframes: Timeframe[] = ["5m", "15m", "1h", "4h", "1d"];
-const autoRefreshMsByTimeframe: Record<Timeframe, number> = {
-  "5m": 30000,
-  "15m": 45000,
-  "1h": 60000,
-  "4h": 120000,
-  "1d": 300000
-};
 const maxStreamReconnectAttempts = 8;
 
 export function DashboardShell() {
@@ -165,14 +158,6 @@ export function DashboardShell() {
     };
   }, [chartResult.dataSource, chartResult.epic, symbol, timeframe]);
 
-  useEffect(() => {
-    const intervalId = window.setInterval(() => {
-      setRefreshCount((value) => value + 1);
-    }, autoRefreshMsByTimeframe[timeframe]);
-
-    return () => window.clearInterval(intervalId);
-  }, [timeframe]);
-
   return (
     <div className="terminal-shell">
       <aside className="sidebar">
@@ -235,7 +220,7 @@ export function DashboardShell() {
           {latestQuote ? <span>Live mid {latestQuote.mid.toFixed(symbol.endsWith("JPY") ? 3 : 5)}</span> : null}
           {latestQuote ? <span>Bid {latestQuote.bid.toFixed(symbol.endsWith("JPY") ? 3 : 5)} / Ask {latestQuote.offer.toFixed(symbol.endsWith("JPY") ? 3 : 5)}</span> : null}
           {quoteUpdatedAt ? <span>Quote {quoteUpdatedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span> : null}
-          <span>Auto-refresh {Math.round(autoRefreshMsByTimeframe[timeframe] / 1000)}s</span>
+          <span>REST refresh manual</span>
           <span>
             Candles {chartResult.loadedCandles ?? chartData.candles.length}
             {chartResult.requestedCandles ? ` / ${chartResult.requestedCandles}` : ""}
