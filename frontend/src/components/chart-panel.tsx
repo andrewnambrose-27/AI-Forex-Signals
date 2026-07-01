@@ -22,18 +22,36 @@ type ChartPanelProps = {
   ema20: LineData[];
   ema50: LineData[];
   ema200: LineData[];
+  ema200WarmingUp: boolean;
   markers: SeriesMarker<Time>[];
+  requestedCandles?: number;
+  loadedCandles?: number;
+  candleWarning?: string | null;
 };
 
-export function ChartPanel({ symbol, timeframe, dataSource, epic, candles, ema20, ema50, ema200, markers }: ChartPanelProps) {
+export function ChartPanel({
+  symbol,
+  timeframe,
+  dataSource,
+  epic,
+  candles,
+  ema20,
+  ema50,
+  ema200,
+  ema200WarmingUp,
+  markers,
+  requestedCandles,
+  loadedCandles,
+  candleWarning
+}: ChartPanelProps) {
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const ema20Ref = useRef<ISeriesApi<"Line"> | null>(null);
   const ema50Ref = useRef<ISeriesApi<"Line"> | null>(null);
   const ema200Ref = useRef<ISeriesApi<"Line"> | null>(null);
-  const previousCandleCountRef = useRef(0);
-  const previousMarketKeyRef = useRef("");
+  const previousViewportKeyRef = useRef("");
+  const candleDateRange = formatCandleDateRange(candles);
 
   useEffect(() => {
     if (!chartContainerRef.current) {
@@ -107,13 +125,17 @@ export function ChartPanel({ symbol, timeframe, dataSource, epic, candles, ema20
     ema20Ref.current?.setData(ema20);
     ema50Ref.current?.setData(ema50);
     ema200Ref.current?.setData(ema200);
-    const marketKey = `${symbol}:${timeframe}`;
-    if (previousCandleCountRef.current !== candles.length || previousMarketKeyRef.current !== marketKey) {
-      chartRef.current?.timeScale().fitContent();
-      previousCandleCountRef.current = candles.length;
-      previousMarketKeyRef.current = marketKey;
+    const viewportKey = `${dataSource}:${symbol}:${timeframe}:${epic ?? ""}`;
+    if (previousViewportKeyRef.current !== viewportKey && candles.length > 0) {
+      const latestIndex = candles.length - 1;
+      const visibleBars = Math.min(160, candles.length);
+      chartRef.current?.timeScale().setVisibleLogicalRange({
+        from: Math.max(0, latestIndex - visibleBars + 1),
+        to: latestIndex + 8
+      });
+      previousViewportKeyRef.current = viewportKey;
     }
-  }, [symbol, timeframe, candles, ema20, ema50, ema200, markers]);
+  }, [dataSource, epic, symbol, timeframe, candles, ema20, ema50, ema200, markers]);
 
   return (
     <section className="chart-panel">
@@ -125,9 +147,12 @@ export function ChartPanel({ symbol, timeframe, dataSource, epic, candles, ema20
         <div className="chart-meta">
           <span>{timeframe}</span>
           {epic ? <span>{epic}</span> : null}
-          <span>EMA 20 / 50 / 200</span>
+          <span>{loadedCandles ?? candles.length} candles loaded{requestedCandles ? ` / ${requestedCandles} requested` : ""}</span>
+          {candleDateRange ? <span>{candleDateRange}</span> : null}
+          <span>{ema200WarmingUp ? "EMA 200 warming up" : "EMA 20 / 50 / 200"}</span>
         </div>
       </div>
+      {candleWarning ? <div className="chart-warning">{candleWarning}</div> : null}
       <div className="chart-canvas" ref={chartContainerRef} />
       <div className="legend">
         <span>
@@ -137,7 +162,7 @@ export function ChartPanel({ symbol, timeframe, dataSource, epic, candles, ema20
           <i className="legend-dot ema50" /> EMA 50
         </span>
         <span>
-          <i className="legend-dot ema200" /> EMA 200
+          <i className="legend-dot ema200" /> EMA 200{ema200WarmingUp ? " warming up" : ""}
         </span>
         <span>
           <i className="legend-dot signal" /> Signal markers
@@ -145,4 +170,20 @@ export function ChartPanel({ symbol, timeframe, dataSource, epic, candles, ema20
       </div>
     </section>
   );
+}
+
+function formatCandleDateRange(candles: CandlestickData[]): string | null {
+  const first = candles[0]?.time;
+  const last = candles[candles.length - 1]?.time;
+  if (typeof first !== "number" || typeof last !== "number") {
+    return null;
+  }
+
+  const dateFormatter = new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+  return `${dateFormatter.format(new Date(first * 1000))} - ${dateFormatter.format(new Date(last * 1000))}`;
 }

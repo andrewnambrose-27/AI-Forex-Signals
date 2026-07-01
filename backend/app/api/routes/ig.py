@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
@@ -5,7 +6,7 @@ from sqlalchemy import select
 
 from app.api.deps import DbSession
 from app.models.candle import Candle
-from app.schemas.candle import CandleRead
+from app.schemas.candle import CandleBootstrapRead
 from app.services.ig_client import (
     IGClient,
     IGClientError,
@@ -75,20 +76,32 @@ def search_markets(q: str = Query(..., min_length=2, max_length=80)) -> dict[str
     }
 
 
-@router.get("/candles", response_model=list[CandleRead])
+@router.get("/candles", response_model=CandleBootstrapRead)
 def fetch_candles(
     db: DbSession,
     epic: str = Query(..., min_length=3, max_length=128),
     resolution: str = Query("HOUR", min_length=2, max_length=16),
-    limit: int = Query(100, ge=1, le=1000),
-) -> list[Candle]:
+    limit: int | None = Query(None, ge=1, le=1000),
+) -> dict[str, Any]:
     normalized_resolution = _normalize_resolution(resolution)
+    requested_count = limit or _default_limit_for_resolution(normalized_resolution)
 
     try:
-        payload = get_ig_client().get_historical_prices(epic, normalized_resolution, limit)
+        payload = get_ig_client().get_historical_prices(epic, normalized_resolution, requested_count)
     except IGClientError as exc:
         if isinstance(exc, IGConfigurationError):
-            return _stored_candles(db, epic, normalized_resolution, limit)
+            candles, dropped_incomplete = _drop_incomplete_current_candle(
+                _stored_candles(db, epic, normalized_resolution, requested_count),
+                normalized_resolution,
+            )
+            return _candle_response(
+                epic=epic,
+                resolution=normalized_resolution,
+                requested_count=requested_count,
+                candles=candles,
+                warning="Using stored candles because IG is not configured.",
+                dropped_incomplete_current_candle=dropped_incomplete,
+            )
         raise _ig_http_exception(exc) from exc
 
     candles: list[Candle] = []
@@ -99,7 +112,19 @@ def fetch_candles(
         candles.append(_upsert_candle(db, parsed))
 
     db.commit()
-    return candles
+    candles = sorted(candles, key=lambda candle: candle.opened_at)
+    candles, dropped_incomplete = _drop_incomplete_current_candle(candles, normalized_resolution)
+    warning = None
+    if len(candles) < requested_count:
+        warning = f"IG returned {len(candles)} closed candles for {normalized_resolution}, fewer than the {requested_count} requested."
+    return _candle_response(
+        epic=epic,
+        resolution=normalized_resolution,
+        requested_count=requested_count,
+        candles=candles,
+        warning=warning,
+        dropped_incomplete_current_candle=dropped_incomplete,
+    )
 
 
 def _stored_candles(db: DbSession, epic: str, resolution: str, limit: int) -> list[Candle]:
@@ -109,7 +134,7 @@ def _stored_candles(db: DbSession, epic: str, resolution: str, limit: int) -> li
         .order_by(Candle.opened_at.desc())
         .limit(limit)
     )
-    return list(db.scalars(query))
+    return sorted(db.scalars(query), key=lambda candle: candle.opened_at)
 
 
 def _upsert_candle(db: DbSession, parsed: dict[str, Any]) -> Candle:
@@ -140,6 +165,66 @@ def _normalize_resolution(value: str) -> str:
         "1d": "DAY",
     }
     return aliases.get(value.lower(), value.upper())
+
+
+def _default_limit_for_resolution(resolution: str) -> int:
+    defaults = {
+        "MINUTE_5": 1000,
+        "MINUTE_15": 1000,
+        "HOUR": 750,
+        "HOUR_4": 500,
+        "DAY": 400,
+    }
+    return defaults.get(resolution, 750)
+
+
+def _drop_incomplete_current_candle(candles: list[Candle], resolution: str) -> tuple[list[Candle], bool]:
+    if not candles:
+        return candles, False
+
+    duration = _resolution_duration(resolution)
+    if duration is None:
+        return candles, False
+
+    latest = candles[-1]
+    opened_at = latest.opened_at
+    if opened_at.tzinfo is None:
+        opened_at = opened_at.replace(tzinfo=timezone.utc)
+
+    if opened_at + duration > datetime.now(timezone.utc):
+        return candles[:-1], True
+    return candles, False
+
+
+def _resolution_duration(resolution: str) -> timedelta | None:
+    durations = {
+        "MINUTE_5": timedelta(minutes=5),
+        "MINUTE_15": timedelta(minutes=15),
+        "HOUR": timedelta(hours=1),
+        "HOUR_4": timedelta(hours=4),
+        "DAY": timedelta(days=1),
+    }
+    return durations.get(resolution)
+
+
+def _candle_response(
+    *,
+    epic: str,
+    resolution: str,
+    requested_count: int,
+    candles: list[Candle],
+    warning: str | None,
+    dropped_incomplete_current_candle: bool = False,
+) -> dict[str, Any]:
+    return {
+        "epic": epic,
+        "resolution": resolution,
+        "requested_count": requested_count,
+        "loaded_count": len(candles),
+        "candles": candles,
+        "warning": warning,
+        "dropped_incomplete_current_candle": dropped_incomplete_current_candle,
+    }
 
 
 def _ig_http_exception(exc: IGClientError) -> HTTPException:

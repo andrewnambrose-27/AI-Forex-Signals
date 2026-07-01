@@ -85,7 +85,7 @@ class IGClient:
         return self._request(
             "GET",
             f"/prices/{epic}",
-            params={"resolution": resolution, "max": bounded_limit},
+            params={"resolution": resolution, "numPoints": bounded_limit},
             version="3",
         )
 

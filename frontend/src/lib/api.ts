@@ -63,11 +63,25 @@ export type BackendCandle = {
   volume?: number | string | null;
 };
 
+export type CandleBootstrap = {
+  epic: string;
+  resolution: string;
+  requested_count: number;
+  loaded_count: number;
+  candles: BackendCandle[];
+  warning?: string | null;
+  dropped_incomplete_current_candle?: boolean;
+};
+
 export type LiveChartLoadResult = {
   chartData: ChartDataSet;
   dataSource: "ig" | "mock";
   epic?: string;
   error?: string;
+  requestedCandles?: number;
+  loadedCandles?: number;
+  candleWarning?: string | null;
+  droppedIncompleteCurrentCandle?: boolean;
 };
 
 export type LiveQuote = {
@@ -132,11 +146,19 @@ const resolutionByTimeframe: Record<Timeframe, string> = {
   "1d": "DAY"
 };
 
+export const defaultCandleCountByTimeframe: Record<Timeframe, number> = {
+  "5m": 1000,
+  "15m": 1000,
+  "1h": 750,
+  "4h": 500,
+  "1d": 400
+};
+
 export async function loadChartData(symbol: string, timeframe: Timeframe): Promise<LiveChartLoadResult> {
   try {
     const epic = await resolveMarketEpic(symbol);
-    const backendCandles = await fetchCandles(epic, resolutionByTimeframe[timeframe], 300);
-    const candles = backendCandles.map(toChartCandle).sort((left, right) => Number(left.time) - Number(right.time));
+    const candleBootstrap = await fetchCandles(epic, resolutionByTimeframe[timeframe], defaultCandleCountByTimeframe[timeframe]);
+    const candles = candleBootstrap.candles.map(toChartCandle).sort((left, right) => Number(left.time) - Number(right.time));
 
     if (candles.length === 0) {
       throw new Error("Backend returned no candles");
@@ -145,7 +167,11 @@ export async function loadChartData(symbol: string, timeframe: Timeframe): Promi
     return {
       chartData: buildChartDataFromCandles(symbol, timeframe, candles),
       dataSource: "ig",
-      epic
+      epic,
+      requestedCandles: candleBootstrap.requested_count,
+      loadedCandles: candleBootstrap.loaded_count,
+      candleWarning: candleBootstrap.warning,
+      droppedIncompleteCurrentCandle: candleBootstrap.dropped_incomplete_current_candle
     };
   } catch (error) {
     return {
@@ -182,7 +208,7 @@ export async function searchMarkets(query: string): Promise<MarketSearchResult[]
   return payload.markets ?? [];
 }
 
-export async function fetchCandles(epic: string, resolution: string, limit: number): Promise<BackendCandle[]> {
+export async function fetchCandles(epic: string, resolution: string, limit: number): Promise<CandleBootstrap> {
   const params = new URLSearchParams({
     epic,
     resolution,
@@ -193,7 +219,20 @@ export async function fetchCandles(epic: string, resolution: string, limit: numb
     throw new Error(`Candle fetch failed with HTTP ${response.status}`);
   }
 
-  return response.json();
+  const payload = await response.json();
+  if (Array.isArray(payload)) {
+    return {
+      epic,
+      resolution,
+      requested_count: limit,
+      loaded_count: payload.length,
+      candles: payload,
+      warning: payload.length < limit ? `Loaded ${payload.length} candles, fewer than the ${limit} requested.` : null,
+      dropped_incomplete_current_candle: false
+    };
+  }
+
+  return payload;
 }
 
 export async function fetchLiveQuote(symbol: string, epic?: string): Promise<LiveQuote> {

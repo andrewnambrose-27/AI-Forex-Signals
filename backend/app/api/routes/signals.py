@@ -30,6 +30,14 @@ from app.services.signal_engine import StrategyEvaluation, StrategyResult, evalu
 
 router = APIRouter(prefix="/signals", tags=["signals"])
 
+DEFAULT_CANDLE_LIMITS = {
+    "5m": 1000,
+    "15m": 1000,
+    "1h": 750,
+    "4h": 500,
+    "1d": 400,
+}
+
 
 @router.post("/score", response_model=SignalRead)
 def score_signal(payload: SignalRequest) -> SignalRead:
@@ -40,7 +48,8 @@ def score_signal(payload: SignalRequest) -> SignalRead:
 def evaluate_signal(payload: SignalEvaluateRequest, db: DbSession) -> SignalEvaluationRead:
     timeframes = _required_timeframes(payload.timeframe)
     candles_by_timeframe = {
-        timeframe: _load_strategy_candles(db, payload.epic, timeframe, limit=300) for timeframe in timeframes
+        timeframe: _load_strategy_candles(db, payload.epic, timeframe, limit=DEFAULT_CANDLE_LIMITS.get(timeframe, 750))
+        for timeframe in timeframes
     }
     evaluation = evaluate_strategies(
         epic=payload.epic,

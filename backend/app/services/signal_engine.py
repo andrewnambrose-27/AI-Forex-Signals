@@ -7,6 +7,9 @@ from typing import Any
 from app.schemas.signal import SignalRead, SignalRequest
 from app.services.technical_indicators import adx, atr, bollinger_bands, ema_set, macd, rsi, support_resistance_zones
 
+MIN_CLOSED_STRATEGY_CANDLES = 220
+MIN_CLOSED_BACKTEST_CANDLES = 60
+
 
 @dataclass(frozen=True)
 class StrategyCandle:
@@ -80,9 +83,9 @@ def evaluate_strategies(
     filters_passed = ["signal_only_mode", "closed_candles_only", "non_repainting_rules"]
     filters_failed: list[str] = []
 
-    if len(primary) < 60:
+    if len(primary) < MIN_CLOSED_STRATEGY_CANDLES:
         filters_failed.append("not_enough_closed_primary_candles")
-    if len(higher) < 60:
+    if len(higher) < MIN_CLOSED_STRATEGY_CANDLES:
         filters_failed.append("not_enough_closed_higher_timeframe_candles")
 
     if filters_failed:
@@ -98,7 +101,7 @@ def evaluate_strategies(
             suggested_stop=None,
             suggested_target=None,
             risk_reward_ratio=None,
-            reasons=["Not enough closed candle history to evaluate strategies without repainting."],
+            reasons=[f"Need at least {MIN_CLOSED_STRATEGY_CANDLES} closed candles before strategy scoring can run."],
             filters_passed=filters_passed,
             filters_failed=filters_failed,
             components=[],
@@ -155,7 +158,7 @@ def evaluate_strategies(
 def evaluate_strategy_candidates(primary: list[Any], higher: list[Any]) -> list[StrategyResult]:
     closed_primary = _closed_candles(primary)
     closed_higher = _closed_candles(higher)
-    if len(closed_primary) < 60 or len(closed_higher) < 60:
+    if len(closed_primary) < MIN_CLOSED_BACKTEST_CANDLES or len(closed_higher) < MIN_CLOSED_BACKTEST_CANDLES:
         return []
     return [
         _trend_continuation(closed_primary, closed_higher),

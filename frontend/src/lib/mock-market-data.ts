@@ -19,7 +19,10 @@ export type ChartDataSet = {
   ema200: LineData[];
   markers: SeriesMarker<Time>[];
   signals: ChartSignal[];
+  ema200WarmingUp: boolean;
 };
+
+export const EMA_200_READY_CANDLES = 220;
 
 const timeframeSeconds: Record<Timeframe, number> = {
   "5m": 300,
@@ -129,14 +132,16 @@ export function getMockChartData(symbol: string, timeframe: Timeframe): ChartDat
     ema50: calculateEma(candles, 50),
     ema200: calculateEma(candles, 200),
     markers,
-    signals
+    signals,
+    ema200WarmingUp: false
   };
 }
 
 export function buildChartDataFromCandles(symbol: string, timeframe: Timeframe, candles: CandlestickData[]): ChartDataSet {
   const ema20 = calculateEma(candles, 20);
   const ema50 = calculateEma(candles, 50);
-  const ema200 = calculateEma(candles, 200);
+  const ema200WarmingUp = candles.length < EMA_200_READY_CANDLES;
+  const ema200 = ema200WarmingUp ? [] : calculateEma(candles, 200);
   const lastCandle = candles[candles.length - 1];
   const lastEma20 = Number(ema20[ema20.length - 1]?.value ?? lastCandle.close);
   const direction = Number(lastCandle.close) >= lastEma20 ? "BUY" : "SELL";
@@ -164,7 +169,8 @@ export function buildChartDataFromCandles(symbol: string, timeframe: Timeframe, 
         text: `${direction} ${score}`
       }
     ],
-    signals: [signal]
+    signals: [signal],
+    ema200WarmingUp
   };
 }
 
@@ -182,7 +188,10 @@ export function updateChartDataWithLivePrice(dataSet: ChartDataSet, symbol: stri
     close: Number(price.toFixed(symbol.endsWith("JPY") ? 3 : 5))
   };
 
-  return buildChartDataFromCandles(symbol, timeframe, candles);
+  return {
+    ...dataSet,
+    candles
+  };
 }
 
 export function getLatestSignal(symbol: string, timeframe: Timeframe, dataSet: ChartDataSet) {
@@ -192,13 +201,26 @@ export function getLatestSignal(symbol: string, timeframe: Timeframe, dataSet: C
   const ema50 = Number(dataSet.ema50[dataSet.ema50.length - 1]?.value ?? 0);
   const ema200 = Number(dataSet.ema200[dataSet.ema200.length - 1]?.value ?? 0);
   const trendAligned = ema20 > ema50 && ema50 > ema200;
+  const hasEnoughCandles = dataSet.candles.length >= EMA_200_READY_CANDLES;
+
+  if (!hasEnoughCandles) {
+    return {
+      symbol,
+      timeframe,
+      direction: "WAIT" as const,
+      score: 0,
+      price: lastClose,
+      reasons: [`Loaded ${dataSet.candles.length} closed candles. Waiting for at least ${EMA_200_READY_CANDLES} before scoring.`],
+      failedFilters: ["Not enough candle history", "EMA 200 warming up"]
+    };
+  }
 
   return {
     symbol,
     timeframe,
     direction: latest?.direction ?? "WAIT",
     score: latest?.score ?? 0,
-    price: latest?.price ?? lastClose,
+    price: lastClose,
     reasons: [
       latest?.reason ?? "Waiting for a clean signal setup.",
       `Last close ${lastClose.toFixed(symbol.endsWith("JPY") ? 3 : 5)} versus EMA 20 ${ema20.toFixed(symbol.endsWith("JPY") ? 3 : 5)}.`,

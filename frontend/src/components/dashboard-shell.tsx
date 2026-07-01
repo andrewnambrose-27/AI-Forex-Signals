@@ -168,7 +168,13 @@ export function DashboardShell() {
           {latestQuote ? <span>Bid {latestQuote.bid.toFixed(symbol.endsWith("JPY") ? 3 : 5)} / Ask {latestQuote.offer.toFixed(symbol.endsWith("JPY") ? 3 : 5)}</span> : null}
           {quoteUpdatedAt ? <span>Quote {quoteUpdatedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span> : null}
           <span>Auto-refresh {Math.round(autoRefreshMsByTimeframe[timeframe] / 1000)}s</span>
+          <span>
+            Candles {chartResult.loadedCandles ?? chartData.candles.length}
+            {chartResult.requestedCandles ? ` / ${chartResult.requestedCandles}` : ""}
+          </span>
+          {chartResult.droppedIncompleteCurrentCandle ? <span>Current incomplete candle excluded</span> : null}
           {lastUpdatedAt ? <span>Updated {lastUpdatedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span> : null}
+          {chartResult.candleWarning ? <span>{chartResult.candleWarning}</span> : null}
           {chartResult.error ? <span>{chartResult.error}</span> : null}
         </div>
 
@@ -182,7 +188,11 @@ export function DashboardShell() {
             ema20={chartData.ema20}
             ema50={chartData.ema50}
             ema200={chartData.ema200}
+            ema200WarmingUp={chartData.ema200WarmingUp}
             markers={chartData.markers}
+            requestedCandles={chartResult.requestedCandles}
+            loadedCandles={chartResult.loadedCandles}
+            candleWarning={chartResult.candleWarning}
           />
           <SignalPanel signal={latestSignal} />
         </div>

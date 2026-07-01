@@ -19,3 +19,13 @@ class CandleRead(BaseModel):
     raw_data: dict | None = None
 
     model_config = {"from_attributes": True}
+
+
+class CandleBootstrapRead(BaseModel):
+    epic: str
+    resolution: str
+    requested_count: int
+    loaded_count: int
+    candles: list[CandleRead]
+    warning: str | None = None
+    dropped_incomplete_current_candle: bool = False

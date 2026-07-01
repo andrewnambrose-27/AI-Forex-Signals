@@ -72,7 +72,7 @@ def test_historical_prices_uses_ig_v3_query_parameters():
         {
             "method": "GET",
             "path": "/prices/CS.D.EURUSD.CFD.IP",
-            "params": {"resolution": "HOUR", "max": 300},
+            "params": {"resolution": "HOUR", "numPoints": 300},
             "version": "3",
             "retry_on_expired_session": True,
         }
