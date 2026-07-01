@@ -77,7 +77,6 @@ class IGStreamingClient:
         ls_client.connectionDetails.setPassword(f"CST-{session.cst}|XST-{session.security_token}")
 
         subscription = Subscription("MERGE", [f"MARKET:{epic}"], ["BID", "OFFER"])
-        subscription.setDataAdapter("QUOTE_ADAPTER")
         subscription.setRequestedSnapshot("yes")
         subscription.addListener(PriceListener())
         ls_client.addListener(ConnectionListener())
