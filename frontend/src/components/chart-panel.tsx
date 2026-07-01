@@ -140,10 +140,23 @@ export function ChartPanel({
   }, [dataSource, epic, symbol, timeframe, candles, ema20, ema50, ema200, markers]);
 
   useEffect(() => {
-    if (livePreviewCandle) {
-      candleSeriesRef.current?.update(livePreviewCandle);
+    if (!livePreviewCandle || !candleSeriesRef.current) {
+      return;
     }
-  }, [livePreviewCandle]);
+
+    const latestCandle = candles[candles.length - 1];
+    const livePreviewTime = Number(livePreviewCandle.time);
+    const latestTime = latestCandle ? Number(latestCandle.time) : -Infinity;
+    if (livePreviewTime < latestTime) {
+      return;
+    }
+
+    try {
+      candleSeriesRef.current.update(livePreviewCandle);
+    } catch {
+      candleSeriesRef.current.setData(candles);
+    }
+  }, [candles, livePreviewCandle]);
 
   return (
     <section className="chart-panel">
