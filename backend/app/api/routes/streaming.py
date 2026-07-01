@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from starlette.websockets import WebSocketState
 
 from app.services.ig_client import IGClient, IGClientError
 from app.services.ig_streaming import IGStreamingClient
@@ -90,6 +91,8 @@ async def stream_prices(websocket: WebSocket) -> None:
                     "message": str(exc),
                 }
             )
+            if websocket.client_state == WebSocketState.CONNECTED:
+                await websocket.close(code=1011)
         except Exception:
             return
 

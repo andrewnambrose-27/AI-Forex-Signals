@@ -95,48 +95,13 @@ export function getMockChartData(symbol: string, timeframe: Timeframe): ChartDat
     previousClose = close;
   }
 
-  const signals: ChartSignal[] = [
-    {
-      id: "trend-breakout",
-      time: candles[84].time,
-      direction: "BUY",
-      score: 68,
-      price: Number(candles[84].close),
-      reason: "EMA 20 crossed above EMA 50 with higher lows forming."
-    },
-    {
-      id: "overextension",
-      time: candles[151].time,
-      direction: "SELL",
-      score: 62,
-      price: Number(candles[151].close),
-      reason: "Momentum faded near prior resistance after an extended move."
-    },
-    {
-      id: "continuation",
-      time: candles[228].time,
-      direction: "BUY",
-      score: 78,
-      price: Number(candles[228].close),
-      reason: "Price reclaimed EMA 20 while EMA 50 remained above EMA 200."
-    }
-  ];
-
-  const markers: SeriesMarker<Time>[] = signals.map((signal) => ({
-    time: signal.time,
-    position: signal.direction === "BUY" ? "belowBar" : "aboveBar",
-    color: signal.direction === "BUY" ? "#22c55e" : "#fb7185",
-    shape: signal.direction === "BUY" ? "arrowUp" : "arrowDown",
-    text: `${signal.direction} ${signal.score}`
-  }));
-
   return {
     candles,
     ema20: calculateEma(candles, 20),
     ema50: calculateEma(candles, 50),
     ema200: calculateEma(candles, 200),
-    markers,
-    signals,
+    markers: [],
+    signals: [],
     ema200WarmingUp: false
   };
 }

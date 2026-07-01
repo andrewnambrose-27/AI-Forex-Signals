@@ -23,6 +23,8 @@ class StreamingPriceTick:
 
 
 class IGStreamingClient:
+    tick_timeout_seconds = 90
+
     def __init__(self, client: IGClient | None = None) -> None:
         self.client = client or IGClient()
 
@@ -65,6 +67,11 @@ class IGStreamingClient:
             def onSubscriptionError(self, code, message) -> None:  # noqa: N802 - Lightstreamer callback name.
                 loop.call_soon_threadsafe(queue.put_nowait, IGStreamingError(f"IG stream subscription failed: {code} {message}"))
 
+        class ConnectionListener:
+            def onStatusChange(self, status) -> None:  # noqa: N802 - Lightstreamer callback name.
+                if str(status).upper().startswith(("DISCONNECTED", "STALLED")):
+                    loop.call_soon_threadsafe(queue.put_nowait, IGStreamingError(f"IG stream status changed to {status}"))
+
         ls_client = LightstreamerClient(session.lightstreamer_endpoint, "DEFAULT")
         ls_client.connectionDetails.setUser(session.account_id)
         ls_client.connectionDetails.setPassword(f"CST-{session.cst}|XST-{session.security_token}")
@@ -73,12 +80,16 @@ class IGStreamingClient:
         subscription.setDataAdapter("QUOTE_ADAPTER")
         subscription.setRequestedSnapshot("yes")
         subscription.addListener(PriceListener())
+        ls_client.addListener(ConnectionListener())
         ls_client.subscribe(subscription)
 
         try:
             await asyncio.to_thread(ls_client.connect)
             while True:
-                tick = await queue.get()
+                try:
+                    tick = await asyncio.wait_for(queue.get(), timeout=self.tick_timeout_seconds)
+                except asyncio.TimeoutError as exc:
+                    raise IGStreamingError("IG stream did not receive price updates before timeout") from exc
                 if isinstance(tick, Exception):
                     raise tick
                 yield tick

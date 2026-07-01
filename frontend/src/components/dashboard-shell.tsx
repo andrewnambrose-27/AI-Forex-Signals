@@ -26,6 +26,7 @@ const autoRefreshMsByTimeframe: Record<Timeframe, number> = {
   "4h": 120000,
   "1d": 300000
 };
+const maxStreamReconnectAttempts = 8;
 
 export function DashboardShell() {
   const [symbol, setSymbol] = useState("EURUSD");
@@ -43,7 +44,12 @@ export function DashboardShell() {
   const [streamMessage, setStreamMessage] = useState<string | null>(null);
   const [livePreviewCandle, setLivePreviewCandle] = useState<CandlestickData | null>(null);
   const chartData = chartResult.chartData;
-  const latestSignal = useMemo(() => getLatestSignal(symbol, timeframe, chartData), [symbol, timeframe, chartData]);
+  const latestSignal = useMemo(() => {
+    if (chartResult.dataSource === "mock") {
+      return unavailableSignal(symbol, timeframe, chartData);
+    }
+    return getLatestSignal(symbol, timeframe, chartData);
+  }, [symbol, timeframe, chartData, chartResult.dataSource]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -92,7 +98,6 @@ export function DashboardShell() {
           setStreamStatus(message.status);
           setStreamMessage(message.message ?? null);
           if (message.status === "failed") {
-            shouldReconnect = false;
             socket?.close();
           }
           return;
@@ -106,6 +111,9 @@ export function DashboardShell() {
           close: message.candle.close,
           isClosed: message.candle.isClosed
         };
+        retryCount = 0;
+        setStreamStatus("connected");
+        setStreamMessage(null);
         setLivePreviewCandle(streamedCandle);
         setChartResult((current) => ({
           ...current,
@@ -124,7 +132,6 @@ export function DashboardShell() {
       };
 
       socket.onopen = () => {
-        retryCount = 0;
         setStreamMessage(null);
       };
 
@@ -133,6 +140,11 @@ export function DashboardShell() {
           return;
         }
         retryCount += 1;
+        if (retryCount > maxStreamReconnectAttempts) {
+          setStreamStatus("failed");
+          setStreamMessage("Streaming failed after several reconnect attempts. Use Refresh for REST fallback.");
+          return;
+        }
         setStreamStatus("reconnecting");
         reconnectTimer = window.setTimeout(connect, Math.min(10000, 1000 * retryCount));
       };
@@ -268,4 +280,17 @@ function streamStatusLabel(status: StreamStatus): string {
     failed: "Streaming failed"
   };
   return labels[status];
+}
+
+function unavailableSignal(symbol: string, timeframe: Timeframe, dataSet: { candles: CandlestickData[] }) {
+  const lastClose = Number(dataSet.candles[dataSet.candles.length - 1]?.close ?? 0);
+  return {
+    symbol,
+    timeframe,
+    direction: "WAIT" as const,
+    score: 0,
+    price: lastClose,
+    reasons: ["Signal unavailable while mock fallback data is displayed."],
+    failedFilters: ["Real IG candles unavailable"]
+  };
 }
