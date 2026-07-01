@@ -64,16 +64,16 @@ def test_sanitize_ig_account_supports_default_flag_alias():
     }
 
 
-def test_historical_prices_uses_ig_v3_query_parameters():
+def test_historical_prices_uses_explicit_ig_count_path():
     client = RecordingIGClient()
 
     assert client.get_historical_prices("CS.D.EURUSD.CFD.IP", "HOUR", 300) == {"prices": []}
     assert client.calls == [
         {
             "method": "GET",
-            "path": "/prices/CS.D.EURUSD.CFD.IP",
-            "params": {"resolution": "HOUR", "numPoints": 300},
-            "version": "3",
+            "path": "/prices/CS.D.EURUSD.CFD.IP/HOUR/300",
+            "params": None,
+            "version": "2",
             "retry_on_expired_session": True,
         }
     ]

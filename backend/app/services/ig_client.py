@@ -84,9 +84,8 @@ class IGClient:
         bounded_limit = max(1, min(limit, 1000))
         return self._request(
             "GET",
-            f"/prices/{epic}",
-            params={"resolution": resolution, "numPoints": bounded_limit},
-            version="3",
+            f"/prices/{epic}/{resolution}/{bounded_limit}",
+            version="2",
         )
 
     def _login(self) -> IGSession:
