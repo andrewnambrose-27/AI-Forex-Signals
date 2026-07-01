@@ -90,17 +90,22 @@ def fetch_candles(
     try:
         payload = get_ig_client().get_historical_prices(epic, normalized_resolution, requested_count)
     except IGClientError as exc:
-        if isinstance(exc, IGConfigurationError):
-            candles, dropped_incomplete = _drop_incomplete_current_candle(
-                _stored_candles(db, epic, normalized_resolution, requested_count),
-                normalized_resolution,
+        candles, dropped_incomplete = _drop_incomplete_current_candle(
+            _stored_candles(db, epic, normalized_resolution, requested_count),
+            normalized_resolution,
+        )
+        if candles:
+            warning = (
+                "Using stored IG candles because IG is not configured."
+                if isinstance(exc, IGConfigurationError)
+                else f"Using stored IG candles because the latest IG request failed: {str(exc)}."
             )
             return _candle_response(
                 epic=epic,
                 resolution=normalized_resolution,
                 requested_count=requested_count,
                 candles=candles,
-                warning="Using stored candles because IG is not configured.",
+                warning=warning,
                 dropped_incomplete_current_candle=dropped_incomplete,
             )
         raise _ig_http_exception(exc) from exc

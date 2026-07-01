@@ -48,13 +48,13 @@ class IGSession:
 class IGClient:
     demo_base_url = "https://demo-api.ig.com/gateway/deal"
     live_base_url = "https://api.ig.com/gateway/deal"
+    _shared_session: IGSession | None = None
 
     def __init__(self) -> None:
         self.settings = get_settings()
         environment = self.settings.ig_environment.upper()
         self.environment = "LIVE" if environment == "LIVE" else "DEMO"
         self.base_url = self.live_base_url if self.environment == "LIVE" else self.demo_base_url
-        self._session: IGSession | None = None
 
     @property
     def is_configured(self) -> bool:
@@ -66,8 +66,8 @@ class IGClient:
             "environment": self.environment,
             "base_url": self.base_url,
             "configured": self.is_configured,
-            "authenticated": self._session is not None,
-            "account_id": self._session.account_id if self._session else self.settings.ig_account_id,
+            "authenticated": self._shared_session is not None,
+            "account_id": self._shared_session.account_id if self._shared_session else self.settings.ig_account_id,
             "trade_placement_enabled": False,
         }
 
@@ -75,7 +75,7 @@ class IGClient:
         return self._request("GET", "/accounts", version="1")
 
     def get_streaming_session(self) -> IGSession:
-        return self._session or self._login()
+        return self._shared_session or self._login()
 
     def get_sanitized_accounts(self) -> list[dict[str, Any]]:
         payload = self.get_accounts()
@@ -117,13 +117,13 @@ class IGClient:
 
         payload = self._safe_json(response)
         account_id = self.settings.ig_account_id or payload.get("currentAccountId")
-        self._session = IGSession(
+        IGClient._shared_session = IGSession(
             cst=cst,
             security_token=security_token,
             account_id=account_id,
             lightstreamer_endpoint=payload.get("lightstreamerEndpoint"),
         )
-        return self._session
+        return IGClient._shared_session
 
     def _request(
         self,
@@ -134,14 +134,14 @@ class IGClient:
         version: str = "1",
         retry_on_expired_session: bool = True,
     ) -> dict[str, Any]:
-        session = self._session or self._login()
+        session = self._shared_session or self._login()
         headers = self._session_headers(session, version=version)
 
         with httpx.Client(base_url=self.base_url, timeout=30) as client:
             response = client.request(method, path, headers=headers, params=params)
 
         if response.status_code == 401 and retry_on_expired_session:
-            self._session = None
+            IGClient._shared_session = None
             return self._request(method, path, params=params, version=version, retry_on_expired_session=False)
 
         self._raise_for_response(response)
