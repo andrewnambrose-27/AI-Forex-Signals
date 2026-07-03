@@ -95,11 +95,7 @@ def fetch_candles(
             normalized_resolution,
         )
         if candles:
-            warning = (
-                "Using stored IG candles because IG is not configured."
-                if isinstance(exc, IGConfigurationError)
-                else f"Using stored IG candle history because the latest IG REST request failed: {str(exc)}."
-            )
+            warning = _stored_history_warning(exc, len(candles), requested_count)
             return _candle_response(
                 epic=epic,
                 resolution=normalized_resolution,
@@ -211,6 +207,14 @@ def _resolution_duration(resolution: str) -> timedelta | None:
         "DAY": timedelta(days=1),
     }
     return durations.get(resolution)
+
+
+def _stored_history_warning(exc: IGClientError, loaded_count: int, requested_count: int) -> str | None:
+    if isinstance(exc, IGConfigurationError):
+        return "Using stored IG candles because IG is not configured."
+    if loaded_count + CANDLE_WARNING_TOLERANCE >= requested_count:
+        return None
+    return f"Using stored IG candle history because the latest IG REST request failed: {str(exc)}."
 
 
 def _candle_response(
