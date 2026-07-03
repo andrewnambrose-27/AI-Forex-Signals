@@ -94,11 +94,6 @@ class IGClient:
         bounded_limit = max(1, min(limit, 1000))
         attempts = [
             {
-                "path": f"/prices/{epic}",
-                "params": {"resolution": resolution, "max": bounded_limit},
-                "version": "3",
-            },
-            {
                 "path": f"/prices/{epic}/{resolution}/{bounded_limit}",
                 "params": None,
                 "version": "2",

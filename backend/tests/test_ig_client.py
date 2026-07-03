@@ -68,7 +68,7 @@ def test_sanitize_ig_account_supports_default_flag_alias():
     }
 
 
-def test_historical_prices_uses_v3_max_price_request_first():
+def test_historical_prices_uses_explicit_count_path_first():
     client = RecordingIGClient()
     payload = {"prices": [{} for _ in range(291)]}
     client.responses = [payload]
@@ -77,15 +77,15 @@ def test_historical_prices_uses_v3_max_price_request_first():
     assert client.calls == [
         {
             "method": "GET",
-            "path": "/prices/CS.D.EURUSD.CFD.IP",
-            "params": {"resolution": "HOUR", "max": 300},
-            "version": "3",
+            "path": "/prices/CS.D.EURUSD.CFD.IP/HOUR/300",
+            "params": None,
+            "version": "2",
             "retry_on_expired_session": True,
         }
     ]
 
 
-def test_historical_prices_accepts_near_complete_v3_payload_without_extra_fallbacks():
+def test_historical_prices_accepts_near_complete_count_payload_without_extra_fallbacks():
     client = RecordingIGClient()
     payload = {"prices": [{} for _ in range(999)]}
     client.responses = [payload]
@@ -94,7 +94,7 @@ def test_historical_prices_accepts_near_complete_v3_payload_without_extra_fallba
     assert len(client.calls) == 1
 
 
-def test_historical_prices_falls_back_to_count_path_when_v3_returns_too_few():
+def test_historical_prices_falls_back_to_numpoints_query_when_count_path_returns_too_few():
     client = RecordingIGClient()
     full_payload = {"prices": [{} for _ in range(300)]}
     client.responses = [
@@ -106,15 +106,15 @@ def test_historical_prices_falls_back_to_count_path_when_v3_returns_too_few():
     assert client.calls == [
         {
             "method": "GET",
-            "path": "/prices/CS.D.EURUSD.CFD.IP",
-            "params": {"resolution": "HOUR", "max": 300},
-            "version": "3",
+            "path": "/prices/CS.D.EURUSD.CFD.IP/HOUR/300",
+            "params": None,
+            "version": "2",
             "retry_on_expired_session": True,
         },
         {
             "method": "GET",
-            "path": "/prices/CS.D.EURUSD.CFD.IP/HOUR/300",
-            "params": None,
+            "path": "/prices/CS.D.EURUSD.CFD.IP",
+            "params": {"resolution": "HOUR", "numPoints": 300},
             "version": "2",
             "retry_on_expired_session": True,
         },
@@ -126,7 +126,6 @@ def test_historical_prices_raises_rejected_attempt_when_only_short_payloads_succ
     short_payload = {"prices": [{} for _ in range(9)]}
     client.responses = [
         short_payload,
-        IGClientError("count path failed"),
         IGClientError("numPoints path failed"),
     ]
 
