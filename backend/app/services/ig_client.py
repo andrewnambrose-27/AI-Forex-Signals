@@ -95,21 +95,31 @@ class IGClient:
         start_at, end_at = _historical_range(resolution, bounded_limit)
         attempts = [
             {
+                "label": "v3 query max",
+                "path": f"/prices/{epic}",
+                "params": {"resolution": resolution, "max": bounded_limit},
+                "version": "3",
+            },
+            {
+                "label": "v2 count path",
                 "path": f"/prices/{epic}/{resolution}/{bounded_limit}",
                 "params": None,
                 "version": "2",
             },
             {
+                "label": "v2 date range path",
                 "path": f"/prices/{epic}/{resolution}/{_format_ig_range_datetime(start_at)}/{_format_ig_range_datetime(end_at)}",
                 "params": None,
                 "version": "2",
             },
             {
+                "label": "v2 query numPoints",
                 "path": f"/prices/{epic}",
                 "params": {"resolution": resolution, "numPoints": bounded_limit},
                 "version": "2",
             },
             {
+                "label": "v2 query max",
                 "path": f"/prices/{epic}",
                 "params": {"resolution": resolution, "max": bounded_limit},
                 "version": "2",
@@ -118,6 +128,7 @@ class IGClient:
 
         best_payload: dict[str, Any] | None = None
         last_error: IGClientError | None = None
+        attempt_errors: list[dict[str, Any]] = []
         for attempt in attempts:
             try:
                 payload = self._request(
@@ -128,6 +139,16 @@ class IGClient:
                 )
             except IGClientError as exc:
                 last_error = exc
+                attempt_errors.append(
+                    {
+                        "attempt": attempt["label"],
+                        "path": attempt["path"],
+                        "params": attempt["params"],
+                        "version": attempt["version"],
+                        "message": str(exc),
+                        "details": exc.details,
+                    }
+                )
                 continue
 
             if _price_count(payload) + self.price_request_tolerance >= bounded_limit:
@@ -138,7 +159,7 @@ class IGClient:
         if best_payload is not None and _price_count(best_payload) > 0 and last_error is None:
             return best_payload
         if last_error is not None:
-            raise last_error
+            raise IGClientError("IG historical price request failed", details={"attempts": attempt_errors})
         return best_payload or {"prices": []}
 
     def _login(self) -> IGSession:

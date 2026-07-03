@@ -68,7 +68,7 @@ def test_sanitize_ig_account_supports_default_flag_alias():
     }
 
 
-def test_historical_prices_uses_explicit_count_path_first():
+def test_historical_prices_uses_v3_query_first():
     client = RecordingIGClient()
     payload = {"prices": [{} for _ in range(291)]}
     client.responses = [payload]
@@ -77,15 +77,15 @@ def test_historical_prices_uses_explicit_count_path_first():
     assert client.calls == [
         {
             "method": "GET",
-            "path": "/prices/CS.D.EURUSD.CFD.IP/HOUR/300",
-            "params": None,
-            "version": "2",
+            "path": "/prices/CS.D.EURUSD.CFD.IP",
+            "params": {"resolution": "HOUR", "max": 300},
+            "version": "3",
             "retry_on_expired_session": True,
         }
     ]
 
 
-def test_historical_prices_accepts_near_complete_count_payload_without_extra_fallbacks():
+def test_historical_prices_accepts_near_complete_v3_payload_without_extra_fallbacks():
     client = RecordingIGClient()
     payload = {"prices": [{} for _ in range(999)]}
     client.responses = [payload]
@@ -94,7 +94,7 @@ def test_historical_prices_accepts_near_complete_count_payload_without_extra_fal
     assert len(client.calls) == 1
 
 
-def test_historical_prices_falls_back_to_date_range_when_count_path_returns_too_few():
+def test_historical_prices_falls_back_to_count_path_when_v3_returns_too_few():
     client = RecordingIGClient()
     full_payload = {"prices": [{} for _ in range(300)]}
     client.responses = [
@@ -105,15 +105,18 @@ def test_historical_prices_falls_back_to_date_range_when_count_path_returns_too_
     assert client.get_historical_prices("CS.D.EURUSD.CFD.IP", "HOUR", 300) == full_payload
     assert client.calls[0] == {
         "method": "GET",
+        "path": "/prices/CS.D.EURUSD.CFD.IP",
+        "params": {"resolution": "HOUR", "max": 300},
+        "version": "3",
+        "retry_on_expired_session": True,
+    }
+    assert client.calls[1] == {
+        "method": "GET",
         "path": "/prices/CS.D.EURUSD.CFD.IP/HOUR/300",
         "params": None,
         "version": "2",
         "retry_on_expired_session": True,
     }
-    assert client.calls[1]["method"] == "GET"
-    assert client.calls[1]["path"].startswith("/prices/CS.D.EURUSD.CFD.IP/HOUR/")
-    assert client.calls[1]["params"] is None
-    assert client.calls[1]["version"] == "2"
 
 
 def test_historical_prices_raises_rejected_attempt_when_only_short_payloads_succeeded():
@@ -121,6 +124,7 @@ def test_historical_prices_raises_rejected_attempt_when_only_short_payloads_succ
     short_payload = {"prices": [{} for _ in range(9)]}
     client.responses = [
         short_payload,
+        IGClientError("count path failed"),
         IGClientError("date range path failed"),
         IGClientError("numPoints path failed"),
         IGClientError("max path failed"),
@@ -129,7 +133,13 @@ def test_historical_prices_raises_rejected_attempt_when_only_short_payloads_succ
     try:
         client.get_historical_prices("CS.D.EURUSD.CFD.IP", "HOUR", 300)
     except IGClientError as exc:
-        assert str(exc) == "max path failed"
+        assert str(exc) == "IG historical price request failed"
+        assert [attempt["attempt"] for attempt in exc.details["attempts"]] == [
+            "v2 count path",
+            "v2 date range path",
+            "v2 query numPoints",
+            "v2 query max",
+        ]
     else:
         raise AssertionError("Expected a rejected historical price request")
 
@@ -139,6 +149,7 @@ def test_historical_prices_tries_v2_max_query_after_numpoints_rejection():
     full_payload = {"prices": [{} for _ in range(300)]}
     client.responses = [
         {"prices": [{} for _ in range(9)]},
+        IGClientError("count path failed"),
         IGClientError("date range path failed"),
         IGClientError("numPoints path failed"),
         full_payload,

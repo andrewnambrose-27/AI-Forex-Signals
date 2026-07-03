@@ -275,8 +275,33 @@ button:disabled {
 }
 
 .chart-canvas {
+  position: relative;
   height: 560px;
   min-width: 0;
+}
+
+.chart-empty-state {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-content: center;
+  gap: 8px;
+  padding: 28px;
+  color: var(--muted);
+  text-align: center;
+  pointer-events: none;
+}
+
+.chart-empty-state strong {
+  color: #f8fafc;
+  font-size: 17px;
+}
+
+.chart-empty-state span {
+  max-width: 420px;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .chart-warning {

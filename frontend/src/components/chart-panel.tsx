@@ -16,7 +16,7 @@ import { useEffect, useRef } from "react";
 type ChartPanelProps = {
   symbol: string;
   timeframe: string;
-  dataSource: "ig" | "mock";
+  dataSource: "ig" | "mock" | "unavailable";
   epic?: string;
   candles: CandlestickData[];
   ema20: LineData[];
@@ -162,7 +162,7 @@ export function ChartPanel({
     <section className="chart-panel">
       <div className="chart-header">
         <div>
-          <span className="eyebrow">{dataSource === "ig" ? "IG demo candles" : "Mock fallback"}</span>
+          <span className="eyebrow">{dataSourceLabel(dataSource)}</span>
           <h2>{symbol}</h2>
         </div>
         <div className="chart-meta">
@@ -174,7 +174,14 @@ export function ChartPanel({
         </div>
       </div>
       {candleWarning ? <div className="chart-warning">{candleWarning}</div> : null}
-      <div className="chart-canvas" ref={chartContainerRef} />
+      <div className="chart-canvas" ref={chartContainerRef}>
+        {dataSource === "unavailable" ? (
+          <div className="chart-empty-state">
+            <strong>Real IG candles unavailable</strong>
+            <span>Historical candle bootstrap failed, so signals are paused for this view.</span>
+          </div>
+        ) : null}
+      </div>
       <div className="legend">
         <span>
           <i className="legend-dot ema20" /> EMA 20
@@ -191,6 +198,16 @@ export function ChartPanel({
       </div>
     </section>
   );
+}
+
+function dataSourceLabel(dataSource: "ig" | "mock" | "unavailable"): string {
+  if (dataSource === "ig") {
+    return "IG demo candles";
+  }
+  if (dataSource === "unavailable") {
+    return "IG candles unavailable";
+  }
+  return "Mock fallback";
 }
 
 function formatCandleDateRange(candles: CandlestickData[]): string | null {

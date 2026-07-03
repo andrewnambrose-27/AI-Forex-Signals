@@ -2,7 +2,7 @@ import type { CandlestickData, Time } from "lightweight-charts";
 
 import {
   buildChartDataFromCandles,
-  getMockChartData,
+  getUnavailableChartData,
   type ChartDataSet,
   type Timeframe
 } from "./mock-market-data";
@@ -76,7 +76,7 @@ export type CandleBootstrap = {
 
 export type LiveChartLoadResult = {
   chartData: ChartDataSet;
-  dataSource: "ig" | "mock";
+  dataSource: "ig" | "mock" | "unavailable";
   epic?: string;
   error?: string;
   requestedCandles?: number;
@@ -205,8 +205,8 @@ export async function loadChartData(symbol: string, timeframe: Timeframe): Promi
     };
   } catch (error) {
     return {
-      chartData: getMockChartData(symbol, timeframe),
-      dataSource: "mock",
+      chartData: getUnavailableChartData(),
+      dataSource: "unavailable",
       error: error instanceof Error ? error.message : "Unable to load IG candles"
     };
   }

@@ -13,7 +13,7 @@ import {
   type PriceStreamMessage,
   type StreamStatus
 } from "@/lib/api";
-import { applyStreamedCandleUpdate, getLatestSignal, getMockChartData, type LiveCandleUpdate, type Timeframe } from "@/lib/mock-market-data";
+import { applyStreamedCandleUpdate, getLatestSignal, getUnavailableChartData, type LiveCandleUpdate, type Timeframe } from "@/lib/mock-market-data";
 import { ChartPanel } from "./chart-panel";
 import { SignalPanel } from "./signal-panel";
 
@@ -26,8 +26,8 @@ export function DashboardShell() {
   const [timeframe, setTimeframe] = useState<Timeframe>("1h");
   const [refreshCount, setRefreshCount] = useState(0);
   const [chartResult, setChartResult] = useState<LiveChartLoadResult>(() => ({
-    chartData: getMockChartData("EURUSD", "1h"),
-    dataSource: "mock"
+    chartData: getUnavailableChartData(),
+    dataSource: "unavailable"
   }));
   const [isLoading, setIsLoading] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
@@ -38,7 +38,7 @@ export function DashboardShell() {
   const [livePreviewCandle, setLivePreviewCandle] = useState<CandlestickData | null>(null);
   const chartData = chartResult.chartData;
   const latestSignal = useMemo(() => {
-    if (chartResult.dataSource === "mock") {
+    if (chartResult.dataSource !== "ig") {
       return unavailableSignal(symbol, timeframe, chartData);
     }
     return getLatestSignal(symbol, timeframe, chartData);
@@ -215,7 +215,7 @@ export function DashboardShell() {
         </header>
 
         <div className={`data-status ${chartResult.dataSource === "ig" ? "live" : "mock"}`}>
-          <span>{chartResult.dataSource === "ig" ? "Connected to IG demo candles" : "Using mock fallback data"}</span>
+          <span>{chartResult.dataSource === "ig" ? "Connected to IG demo candles" : "Real IG candles unavailable"}</span>
           {chartResult.dataSource === "ig" ? <span>{streamStatusLabel(streamStatus)}</span> : null}
           {latestQuote ? <span>Live mid {latestQuote.mid.toFixed(symbol.endsWith("JPY") ? 3 : 5)}</span> : null}
           {latestQuote ? <span>Bid {latestQuote.bid.toFixed(symbol.endsWith("JPY") ? 3 : 5)} / Ask {latestQuote.offer.toFixed(symbol.endsWith("JPY") ? 3 : 5)}</span> : null}
@@ -275,7 +275,7 @@ function unavailableSignal(symbol: string, timeframe: Timeframe, dataSet: { cand
     direction: "WAIT" as const,
     score: 0,
     price: lastClose,
-    reasons: ["Signal unavailable while mock fallback data is displayed."],
+    reasons: ["Signal unavailable while real IG candles are unavailable."],
     failedFilters: ["Real IG candles unavailable"]
   };
 }

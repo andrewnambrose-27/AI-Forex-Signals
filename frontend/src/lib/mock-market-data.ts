@@ -106,6 +106,18 @@ export function getMockChartData(symbol: string, timeframe: Timeframe): ChartDat
   };
 }
 
+export function getUnavailableChartData(): ChartDataSet {
+  return {
+    candles: [],
+    ema20: [],
+    ema50: [],
+    ema200: [],
+    markers: [],
+    signals: [],
+    ema200WarmingUp: true
+  };
+}
+
 export function buildChartDataFromCandles(symbol: string, timeframe: Timeframe, candles: CandlestickData[]): ChartDataSet {
   const ema20 = calculateEma(candles, 20);
   const ema50 = calculateEma(candles, 50);
