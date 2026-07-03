@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.services.ig_client import IGClient, IGClientError, IGRateLimitError, IGRequestRejectedError, sanitize_ig_account
@@ -5,6 +6,7 @@ from app.services.ig_client import IGClient, IGClientError, IGRateLimitError, IG
 
 class RecordingIGClient(IGClient):
     def __init__(self) -> None:
+        IGClient._historical_allowance_blocked_until = None
         self.calls: list[dict[str, Any]] = []
         self.responses: list[dict[str, Any] | Exception] = [{"prices": []}]
 
@@ -180,6 +182,22 @@ def test_historical_prices_stops_after_historical_allowance_error():
     except IGRateLimitError as exc:
         assert str(exc) == "IG historical data allowance exceeded"
         assert exc.details["errorCode"] == "error.public-api.exceeded-account-historical-data-allowance"
+        assert exc.details["retryAfterSeconds"] == 1800
         assert len(client.calls) == 1
     else:
         raise AssertionError("Expected historical data allowance error")
+
+
+def test_historical_prices_uses_cooldown_after_historical_allowance_error():
+    client = RecordingIGClient()
+    IGClient._historical_allowance_blocked_until = datetime.now(timezone.utc) + timedelta(minutes=15)
+
+    try:
+        client.get_historical_prices("CS.D.EURUSD.CFD.IP", "HOUR", 300)
+    except IGRateLimitError as exc:
+        assert str(exc) == "IG historical data allowance cooldown active"
+        assert exc.details["errorCode"] == "error.public-api.exceeded-account-historical-data-allowance"
+        assert exc.details["retryAfterSeconds"] > 0
+        assert client.calls == []
+    else:
+        raise AssertionError("Expected historical data allowance cooldown")

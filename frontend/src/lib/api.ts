@@ -292,7 +292,8 @@ function responseErrorDetail(detail: unknown): string | null {
 
   const errorCode = "errorCode" in details ? (details as { errorCode?: unknown }).errorCode : null;
   if (errorCode === "error.public-api.exceeded-account-historical-data-allowance") {
-    return "IG says the historical data allowance has been exceeded; wait for the allowance to reset or reduce refreshes.";
+    const retryText = retryAfterText(details);
+    return `IG says the historical data allowance has been exceeded; wait for the allowance to reset or reduce refreshes.${retryText}`;
   }
 
   const attempts = "attempts" in details ? (details as { attempts?: unknown }).attempts : null;
@@ -305,6 +306,16 @@ function responseErrorDetail(detail: unknown): string | null {
   const firstAttemptMessage = typeof firstAttempt.message === "string" ? firstAttempt.message : "failed";
   const firstErrorCode = typeof firstAttempt.details?.errorCode === "string" ? ` (${firstAttempt.details.errorCode})` : "";
   return `${firstAttemptName}: ${firstAttemptMessage}${firstErrorCode}.`;
+}
+
+function retryAfterText(details: object): string {
+  const retryAfterSeconds = "retryAfterSeconds" in details ? (details as { retryAfterSeconds?: unknown }).retryAfterSeconds : null;
+  if (typeof retryAfterSeconds !== "number" || retryAfterSeconds <= 0) {
+    return "";
+  }
+
+  const minutes = Math.max(1, Math.ceil(retryAfterSeconds / 60));
+  return ` Backend will pause historical REST requests for about ${minutes} minute${minutes === 1 ? "" : "s"}.`;
 }
 
 export function getPriceWebSocketUrl(symbol: string, timeframe: Timeframe, epic?: string): string {

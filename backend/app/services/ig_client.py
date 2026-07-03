@@ -54,7 +54,9 @@ class IGClient:
     demo_base_url = "https://demo-api.ig.com/gateway/deal"
     live_base_url = "https://api.ig.com/gateway/deal"
     price_request_tolerance = 10
+    historical_allowance_cooldown = timedelta(minutes=30)
     _shared_session: IGSession | None = None
+    _historical_allowance_blocked_until: datetime | None = None
 
     def __init__(self) -> None:
         self.settings = get_settings()
@@ -91,6 +93,7 @@ class IGClient:
         return self._request("GET", "/markets", params={"searchTerm": query}, version="1")
 
     def get_historical_prices(self, epic: str, resolution: str, limit: int) -> dict[str, Any]:
+        self._raise_if_historical_allowance_blocked()
         bounded_limit = max(1, min(limit, 1000))
         start_at, end_at = _historical_range(resolution, bounded_limit)
         attempts = [
@@ -150,9 +153,16 @@ class IGClient:
                     }
                 )
                 if _is_historical_allowance_error(exc):
+                    blocked_until = datetime.now(timezone.utc) + self.historical_allowance_cooldown
+                    IGClient._historical_allowance_blocked_until = blocked_until
                     raise IGRateLimitError(
                         "IG historical data allowance exceeded",
-                        details={"attempts": attempt_errors, "errorCode": _ig_error_code(exc)},
+                        details={
+                            "attempts": attempt_errors,
+                            "errorCode": _ig_error_code(exc),
+                            "retryAfterSeconds": int(self.historical_allowance_cooldown.total_seconds()),
+                            "blockedUntil": blocked_until.isoformat(),
+                        },
                     ) from exc
                 continue
 
@@ -166,6 +176,24 @@ class IGClient:
         if last_error is not None:
             raise IGClientError("IG historical price request failed", details={"attempts": attempt_errors})
         return best_payload or {"prices": []}
+
+    def _raise_if_historical_allowance_blocked(self) -> None:
+        blocked_until = self._historical_allowance_blocked_until
+        now = datetime.now(timezone.utc)
+        if blocked_until is None or blocked_until <= now:
+            if blocked_until is not None:
+                IGClient._historical_allowance_blocked_until = None
+            return
+
+        retry_after_seconds = max(1, int((blocked_until - now).total_seconds()))
+        raise IGRateLimitError(
+            "IG historical data allowance cooldown active",
+            details={
+                "errorCode": "error.public-api.exceeded-account-historical-data-allowance",
+                "retryAfterSeconds": retry_after_seconds,
+                "blockedUntil": blocked_until.isoformat(),
+            },
+        )
 
     def _login(self) -> IGSession:
         if not self.is_configured:

@@ -88,6 +88,22 @@ def fetch_candles(
     normalized_resolution = _normalize_resolution(resolution)
     requested_count = limit or _default_limit_for_resolution(normalized_resolution)
 
+    cached_candles, cached_dropped_incomplete = _fresh_stored_candles(
+        db,
+        epic,
+        normalized_resolution,
+        requested_count,
+    )
+    if cached_candles and len(cached_candles) + CANDLE_WARNING_TOLERANCE >= requested_count:
+        return _candle_response(
+            epic=epic,
+            resolution=normalized_resolution,
+            requested_count=requested_count,
+            candles=cached_candles,
+            warning=None,
+            dropped_incomplete_current_candle=cached_dropped_incomplete,
+        )
+
     try:
         payload = get_ig_client().get_historical_prices(epic, normalized_resolution, requested_count)
     except IGClientError as exc:
@@ -149,6 +165,13 @@ def _stored_candles(db: DbSession, epic: str, resolution: str, limit: int) -> li
         .limit(limit)
     )
     return sorted(db.scalars(query), key=lambda candle: candle.opened_at)
+
+
+def _fresh_stored_candles(db: DbSession, epic: str, resolution: str, limit: int) -> tuple[list[Candle], bool]:
+    candles, dropped_incomplete = _drop_incomplete_current_candle(_stored_candles(db, epic, resolution, limit), resolution)
+    if candles and _has_recent_candle(candles, resolution):
+        return candles, dropped_incomplete
+    return [], False
 
 
 def _derived_stored_candles(db: DbSession, epic: str, resolution: str, limit: int) -> list[Candle]:
