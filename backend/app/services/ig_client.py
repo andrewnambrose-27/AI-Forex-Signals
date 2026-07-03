@@ -53,6 +53,7 @@ class IGSession:
 class IGClient:
     demo_base_url = "https://demo-api.ig.com/gateway/deal"
     live_base_url = "https://api.ig.com/gateway/deal"
+    price_request_tolerance = 10
     _shared_session: IGSession | None = None
 
     def __init__(self) -> None:
@@ -91,11 +92,48 @@ class IGClient:
 
     def get_historical_prices(self, epic: str, resolution: str, limit: int) -> dict[str, Any]:
         bounded_limit = max(1, min(limit, 1000))
-        return self._request(
-            "GET",
-            f"/prices/{epic}/{resolution}/{bounded_limit}",
-            version="2",
-        )
+        attempts = [
+            {
+                "path": f"/prices/{epic}",
+                "params": {"resolution": resolution, "max": bounded_limit},
+                "version": "3",
+            },
+            {
+                "path": f"/prices/{epic}/{resolution}/{bounded_limit}",
+                "params": None,
+                "version": "2",
+            },
+            {
+                "path": f"/prices/{epic}",
+                "params": {"resolution": resolution, "numPoints": bounded_limit},
+                "version": "2",
+            },
+        ]
+
+        best_payload: dict[str, Any] | None = None
+        last_error: IGClientError | None = None
+        for attempt in attempts:
+            try:
+                payload = self._request(
+                    "GET",
+                    attempt["path"],
+                    params=attempt["params"],
+                    version=attempt["version"],
+                )
+            except IGClientError as exc:
+                last_error = exc
+                continue
+
+            if _price_count(payload) + self.price_request_tolerance >= bounded_limit:
+                return payload
+            if best_payload is None or _price_count(payload) > _price_count(best_payload):
+                best_payload = payload
+
+        if best_payload is not None and _price_count(best_payload) > 0 and last_error is None:
+            return best_payload
+        if last_error is not None:
+            raise last_error
+        return best_payload or {"prices": []}
 
     def _login(self) -> IGSession:
         if not self.is_configured:
@@ -229,6 +267,11 @@ def _decimal_or_none(value: Any) -> Decimal | None:
     if value is None:
         return None
     return Decimal(str(value))
+
+
+def _price_count(payload: dict[str, Any]) -> int:
+    prices = payload.get("prices")
+    return len(prices) if isinstance(prices, list) else 0
 
 
 def _parse_ig_timestamp(value: str | None) -> datetime | None:

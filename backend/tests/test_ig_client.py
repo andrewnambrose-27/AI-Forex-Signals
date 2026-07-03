@@ -1,11 +1,12 @@
 from typing import Any
 
-from app.services.ig_client import IGClient, sanitize_ig_account
+from app.services.ig_client import IGClient, IGClientError, sanitize_ig_account
 
 
 class RecordingIGClient(IGClient):
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
+        self.responses: list[dict[str, Any] | Exception] = [{"prices": []}]
 
     def _request(
         self,
@@ -25,7 +26,10 @@ class RecordingIGClient(IGClient):
                 "retry_on_expired_session": retry_on_expired_session,
             }
         )
-        return {"prices": []}
+        response = self.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
 
 
 def test_sanitize_ig_account_only_returns_safe_account_fields():
@@ -64,16 +68,71 @@ def test_sanitize_ig_account_supports_default_flag_alias():
     }
 
 
-def test_historical_prices_uses_explicit_ig_count_path():
+def test_historical_prices_uses_v3_max_price_request_first():
     client = RecordingIGClient()
+    payload = {"prices": [{} for _ in range(291)]}
+    client.responses = [payload]
 
-    assert client.get_historical_prices("CS.D.EURUSD.CFD.IP", "HOUR", 300) == {"prices": []}
+    assert client.get_historical_prices("CS.D.EURUSD.CFD.IP", "HOUR", 300) == payload
     assert client.calls == [
+        {
+            "method": "GET",
+            "path": "/prices/CS.D.EURUSD.CFD.IP",
+            "params": {"resolution": "HOUR", "max": 300},
+            "version": "3",
+            "retry_on_expired_session": True,
+        }
+    ]
+
+
+def test_historical_prices_accepts_near_complete_v3_payload_without_extra_fallbacks():
+    client = RecordingIGClient()
+    payload = {"prices": [{} for _ in range(999)]}
+    client.responses = [payload]
+
+    assert client.get_historical_prices("CS.D.EURUSD.CFD.IP", "MINUTE_5", 1000) == payload
+    assert len(client.calls) == 1
+
+
+def test_historical_prices_falls_back_to_count_path_when_v3_returns_too_few():
+    client = RecordingIGClient()
+    full_payload = {"prices": [{} for _ in range(300)]}
+    client.responses = [
+        {"prices": [{} for _ in range(9)]},
+        full_payload,
+    ]
+
+    assert client.get_historical_prices("CS.D.EURUSD.CFD.IP", "HOUR", 300) == full_payload
+    assert client.calls == [
+        {
+            "method": "GET",
+            "path": "/prices/CS.D.EURUSD.CFD.IP",
+            "params": {"resolution": "HOUR", "max": 300},
+            "version": "3",
+            "retry_on_expired_session": True,
+        },
         {
             "method": "GET",
             "path": "/prices/CS.D.EURUSD.CFD.IP/HOUR/300",
             "params": None,
             "version": "2",
             "retry_on_expired_session": True,
-        }
+        },
     ]
+
+
+def test_historical_prices_raises_rejected_attempt_when_only_short_payloads_succeeded():
+    client = RecordingIGClient()
+    short_payload = {"prices": [{} for _ in range(9)]}
+    client.responses = [
+        short_payload,
+        IGClientError("count path failed"),
+        IGClientError("numPoints path failed"),
+    ]
+
+    try:
+        client.get_historical_prices("CS.D.EURUSD.CFD.IP", "HOUR", 300)
+    except IGClientError as exc:
+        assert str(exc) == "numPoints path failed"
+    else:
+        raise AssertionError("Expected a rejected historical price request")
