@@ -94,7 +94,7 @@ def test_historical_prices_accepts_near_complete_count_payload_without_extra_fal
     assert len(client.calls) == 1
 
 
-def test_historical_prices_falls_back_to_numpoints_query_when_count_path_returns_too_few():
+def test_historical_prices_falls_back_to_date_range_when_count_path_returns_too_few():
     client = RecordingIGClient()
     full_payload = {"prices": [{} for _ in range(300)]}
     client.responses = [
@@ -103,22 +103,17 @@ def test_historical_prices_falls_back_to_numpoints_query_when_count_path_returns
     ]
 
     assert client.get_historical_prices("CS.D.EURUSD.CFD.IP", "HOUR", 300) == full_payload
-    assert client.calls == [
-        {
-            "method": "GET",
-            "path": "/prices/CS.D.EURUSD.CFD.IP/HOUR/300",
-            "params": None,
-            "version": "2",
-            "retry_on_expired_session": True,
-        },
-        {
-            "method": "GET",
-            "path": "/prices/CS.D.EURUSD.CFD.IP",
-            "params": {"resolution": "HOUR", "numPoints": 300},
-            "version": "2",
-            "retry_on_expired_session": True,
-        },
-    ]
+    assert client.calls[0] == {
+        "method": "GET",
+        "path": "/prices/CS.D.EURUSD.CFD.IP/HOUR/300",
+        "params": None,
+        "version": "2",
+        "retry_on_expired_session": True,
+    }
+    assert client.calls[1]["method"] == "GET"
+    assert client.calls[1]["path"].startswith("/prices/CS.D.EURUSD.CFD.IP/HOUR/")
+    assert client.calls[1]["params"] is None
+    assert client.calls[1]["version"] == "2"
 
 
 def test_historical_prices_raises_rejected_attempt_when_only_short_payloads_succeeded():
@@ -126,6 +121,7 @@ def test_historical_prices_raises_rejected_attempt_when_only_short_payloads_succ
     short_payload = {"prices": [{} for _ in range(9)]}
     client.responses = [
         short_payload,
+        IGClientError("date range path failed"),
         IGClientError("numPoints path failed"),
         IGClientError("max path failed"),
     ]
@@ -143,6 +139,7 @@ def test_historical_prices_tries_v2_max_query_after_numpoints_rejection():
     full_payload = {"prices": [{} for _ in range(300)]}
     client.responses = [
         {"prices": [{} for _ in range(9)]},
+        IGClientError("date range path failed"),
         IGClientError("numPoints path failed"),
         full_payload,
     ]

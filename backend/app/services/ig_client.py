@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -92,9 +92,15 @@ class IGClient:
 
     def get_historical_prices(self, epic: str, resolution: str, limit: int) -> dict[str, Any]:
         bounded_limit = max(1, min(limit, 1000))
+        start_at, end_at = _historical_range(resolution, bounded_limit)
         attempts = [
             {
                 "path": f"/prices/{epic}/{resolution}/{bounded_limit}",
+                "params": None,
+                "version": "2",
+            },
+            {
+                "path": f"/prices/{epic}/{resolution}/{_format_ig_range_datetime(start_at)}/{_format_ig_range_datetime(end_at)}",
                 "params": None,
                 "version": "2",
             },
@@ -272,6 +278,27 @@ def _decimal_or_none(value: Any) -> Decimal | None:
 def _price_count(payload: dict[str, Any]) -> int:
     prices = payload.get("prices")
     return len(prices) if isinstance(prices, list) else 0
+
+
+def _historical_range(resolution: str, limit: int) -> tuple[datetime, datetime]:
+    duration = _resolution_duration(resolution) or timedelta(hours=1)
+    end_at = datetime.now(timezone.utc)
+    return end_at - (duration * (limit + 10)), end_at
+
+
+def _resolution_duration(resolution: str) -> timedelta | None:
+    durations = {
+        "MINUTE_5": timedelta(minutes=5),
+        "MINUTE_15": timedelta(minutes=15),
+        "HOUR": timedelta(hours=1),
+        "HOUR_4": timedelta(hours=4),
+        "DAY": timedelta(days=1),
+    }
+    return durations.get(resolution)
+
+
+def _format_ig_range_datetime(value: datetime) -> str:
+    return value.strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _parse_ig_timestamp(value: str | None) -> datetime | None:

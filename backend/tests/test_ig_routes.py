@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from app.api.routes.ig import _aggregate_candles, _stored_history_warning
+from app.api.routes.ig import _aggregate_candles, _has_recent_candle, _stored_history_warning
 from app.models.candle import Candle
 from app.services.ig_client import IGClientError, IGConfigurationError
 
@@ -57,6 +57,18 @@ def test_aggregate_candles_skips_incomplete_15_minute_bucket():
     candles = _aggregate_candles(source, "CS.D.EURUSD.MINI.IP", "MINUTE_15", timedelta(minutes=15))
 
     assert candles == []
+
+
+def test_has_recent_candle_accepts_current_timeframe_history():
+    candle = _candle(datetime.now(timezone.utc).replace(minute=30, second=0, microsecond=0).isoformat(), "1.1000", "1.1010", "1.0990", "1.1005", None)
+
+    assert _has_recent_candle([candle], "MINUTE_15")
+
+
+def test_has_recent_candle_rejects_stale_timeframe_history():
+    candle = _candle("2026-01-01T12:00:00+00:00", "1.1000", "1.1010", "1.0990", "1.1005", None)
+
+    assert not _has_recent_candle([candle], "MINUTE_15")
 
 
 def _candle(opened_at: str, open_: str, high: str, low: str, close: str, volume: str | None) -> Candle:

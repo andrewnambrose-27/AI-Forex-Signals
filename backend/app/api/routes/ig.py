@@ -95,11 +95,17 @@ def fetch_candles(
             _stored_candles(db, epic, normalized_resolution, requested_count),
             normalized_resolution,
         )
+        if candles and not _has_recent_candle(candles, normalized_resolution):
+            candles = []
+            dropped_incomplete = False
         if not candles:
             candles, dropped_incomplete = _drop_incomplete_current_candle(
                 _derived_stored_candles(db, epic, normalized_resolution, requested_count),
                 normalized_resolution,
             )
+            if candles and not _has_recent_candle(candles, normalized_resolution):
+                candles = []
+                dropped_incomplete = False
         if candles:
             warning = _stored_history_warning(exc, len(candles), requested_count)
             return _candle_response(
@@ -249,6 +255,20 @@ def _drop_incomplete_current_candle(candles: list[Candle], resolution: str) -> t
     if opened_at + duration > datetime.now(timezone.utc):
         return candles[:-1], True
     return candles, False
+
+
+def _has_recent_candle(candles: list[Candle], resolution: str) -> bool:
+    if not candles:
+        return False
+
+    duration = _resolution_duration(resolution)
+    if duration is None:
+        return True
+
+    latest_opened_at = candles[-1].opened_at
+    if latest_opened_at.tzinfo is None:
+        latest_opened_at = latest_opened_at.replace(tzinfo=timezone.utc)
+    return latest_opened_at + (duration * 3) >= datetime.now(timezone.utc)
 
 
 def _resolution_duration(resolution: str) -> timedelta | None:
