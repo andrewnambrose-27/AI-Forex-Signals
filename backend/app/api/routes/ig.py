@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
@@ -94,6 +95,11 @@ def fetch_candles(
             _stored_candles(db, epic, normalized_resolution, requested_count),
             normalized_resolution,
         )
+        if not candles:
+            candles, dropped_incomplete = _drop_incomplete_current_candle(
+                _derived_stored_candles(db, epic, normalized_resolution, requested_count),
+                normalized_resolution,
+            )
         if candles:
             warning = _stored_history_warning(exc, len(candles), requested_count)
             return _candle_response(
@@ -137,6 +143,53 @@ def _stored_candles(db: DbSession, epic: str, resolution: str, limit: int) -> li
         .limit(limit)
     )
     return sorted(db.scalars(query), key=lambda candle: candle.opened_at)
+
+
+def _derived_stored_candles(db: DbSession, epic: str, resolution: str, limit: int) -> list[Candle]:
+    if resolution != "MINUTE_15":
+        return []
+
+    source_candles = _stored_candles(db, epic, "MINUTE_5", limit * 3)
+    return _aggregate_candles(source_candles, epic, resolution, timedelta(minutes=15))
+
+
+def _aggregate_candles(source_candles: list[Candle], epic: str, resolution: str, duration: timedelta) -> list[Candle]:
+    buckets: dict[datetime, list[Candle]] = {}
+    source_duration = _resolution_duration("MINUTE_5")
+    if source_duration is None:
+        return []
+
+    for candle in source_candles:
+        opened_at = candle.opened_at
+        if opened_at.tzinfo is None:
+            opened_at = opened_at.replace(tzinfo=timezone.utc)
+        bucket_start = _floor_datetime(opened_at, duration)
+        buckets.setdefault(bucket_start, []).append(candle)
+
+    aggregated: list[Candle] = []
+    expected_count = int(duration.total_seconds() / source_duration.total_seconds())
+    for opened_at in sorted(buckets):
+        bucket = sorted(buckets[opened_at], key=lambda candle: candle.opened_at)
+        if len(bucket) < expected_count:
+            continue
+        volume = _sum_optional_decimals(candle.volume for candle in bucket)
+        aggregated.append(
+            Candle(
+                epic=epic,
+                symbol=epic,
+                timeframe=resolution,
+                resolution=resolution,
+                provider="ig",
+                opened_at=opened_at,
+                open=bucket[0].open,
+                high=max(candle.high for candle in bucket),
+                low=min(candle.low for candle in bucket),
+                close=bucket[-1].close,
+                volume=volume,
+                raw_data={"source": "stored_ig_aggregation", "source_resolution": "MINUTE_5"},
+            )
+        )
+    return aggregated
 
 
 def _upsert_candle(db: DbSession, parsed: dict[str, Any]) -> Candle:
@@ -207,6 +260,22 @@ def _resolution_duration(resolution: str) -> timedelta | None:
         "DAY": timedelta(days=1),
     }
     return durations.get(resolution)
+
+
+def _floor_datetime(value: datetime, duration: timedelta) -> datetime:
+    epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+    seconds = int((value - epoch).total_seconds())
+    bucket_seconds = int(duration.total_seconds())
+    return epoch + timedelta(seconds=seconds - (seconds % bucket_seconds))
+
+
+def _sum_optional_decimals(values: Any) -> Decimal | None:
+    total: Decimal | None = None
+    for value in values:
+        if value is None:
+            continue
+        total = value if total is None else total + value
+    return total
 
 
 def _stored_history_warning(exc: IGClientError, loaded_count: int, requested_count: int) -> str | None:

@@ -103,6 +103,11 @@ class IGClient:
                 "params": {"resolution": resolution, "numPoints": bounded_limit},
                 "version": "2",
             },
+            {
+                "path": f"/prices/{epic}",
+                "params": {"resolution": resolution, "max": bounded_limit},
+                "version": "2",
+            },
         ]
 
         best_payload: dict[str, Any] | None = None

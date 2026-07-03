@@ -127,11 +127,31 @@ def test_historical_prices_raises_rejected_attempt_when_only_short_payloads_succ
     client.responses = [
         short_payload,
         IGClientError("numPoints path failed"),
+        IGClientError("max path failed"),
     ]
 
     try:
         client.get_historical_prices("CS.D.EURUSD.CFD.IP", "HOUR", 300)
     except IGClientError as exc:
-        assert str(exc) == "numPoints path failed"
+        assert str(exc) == "max path failed"
     else:
         raise AssertionError("Expected a rejected historical price request")
+
+
+def test_historical_prices_tries_v2_max_query_after_numpoints_rejection():
+    client = RecordingIGClient()
+    full_payload = {"prices": [{} for _ in range(300)]}
+    client.responses = [
+        {"prices": [{} for _ in range(9)]},
+        IGClientError("numPoints path failed"),
+        full_payload,
+    ]
+
+    assert client.get_historical_prices("CS.D.EURUSD.CFD.IP", "MINUTE_15", 300) == full_payload
+    assert client.calls[-1] == {
+        "method": "GET",
+        "path": "/prices/CS.D.EURUSD.CFD.IP",
+        "params": {"resolution": "MINUTE_15", "max": 300},
+        "version": "2",
+        "retry_on_expired_session": True,
+    }

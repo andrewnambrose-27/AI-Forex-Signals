@@ -246,7 +246,7 @@ export async function fetchCandles(epic: string, resolution: string, limit: numb
   });
   const response = await fetch(`${API_BASE_URL}/api/candles?${params.toString()}`);
   if (!response.ok) {
-    throw new Error(`Candle fetch failed with HTTP ${response.status}`);
+    throw new Error(await responseErrorMessage(response, "Candle fetch failed"));
   }
 
   const payload = await response.json();
@@ -263,6 +263,17 @@ export async function fetchCandles(epic: string, resolution: string, limit: numb
   }
 
   return payload;
+}
+
+async function responseErrorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const payload = await response.json();
+    const detail = payload?.detail;
+    const message = typeof detail?.message === "string" ? detail.message : typeof detail === "string" ? detail : null;
+    return message ? `${fallback}: ${message}` : `${fallback} with HTTP ${response.status}`;
+  } catch {
+    return `${fallback} with HTTP ${response.status}`;
+  }
 }
 
 export function getPriceWebSocketUrl(symbol: string, timeframe: Timeframe, epic?: string): string {
