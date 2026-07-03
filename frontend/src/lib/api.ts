@@ -270,10 +270,41 @@ async function responseErrorMessage(response: Response, fallback: string): Promi
     const payload = await response.json();
     const detail = payload?.detail;
     const message = typeof detail?.message === "string" ? detail.message : typeof detail === "string" ? detail : null;
+    const extra = responseErrorDetail(detail);
+    if (message && extra) {
+      return `${fallback}: ${message}. ${extra}`;
+    }
     return message ? `${fallback}: ${message}` : `${fallback} with HTTP ${response.status}`;
   } catch {
     return `${fallback} with HTTP ${response.status}`;
   }
+}
+
+function responseErrorDetail(detail: unknown): string | null {
+  if (!detail || typeof detail !== "object") {
+    return null;
+  }
+
+  const details = "details" in detail ? (detail as { details?: unknown }).details : null;
+  if (!details || typeof details !== "object") {
+    return null;
+  }
+
+  const errorCode = "errorCode" in details ? (details as { errorCode?: unknown }).errorCode : null;
+  if (errorCode === "error.public-api.exceeded-account-historical-data-allowance") {
+    return "IG says the historical data allowance has been exceeded; wait for the allowance to reset or reduce refreshes.";
+  }
+
+  const attempts = "attempts" in details ? (details as { attempts?: unknown }).attempts : null;
+  if (!Array.isArray(attempts) || attempts.length === 0) {
+    return null;
+  }
+
+  const firstAttempt = attempts[0] as { attempt?: unknown; message?: unknown; details?: { errorCode?: unknown } };
+  const firstAttemptName = typeof firstAttempt.attempt === "string" ? firstAttempt.attempt : "first attempt";
+  const firstAttemptMessage = typeof firstAttempt.message === "string" ? firstAttempt.message : "failed";
+  const firstErrorCode = typeof firstAttempt.details?.errorCode === "string" ? ` (${firstAttempt.details.errorCode})` : "";
+  return `${firstAttemptName}: ${firstAttemptMessage}${firstErrorCode}.`;
 }
 
 export function getPriceWebSocketUrl(symbol: string, timeframe: Timeframe, epic?: string): string {

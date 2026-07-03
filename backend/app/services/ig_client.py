@@ -149,6 +149,11 @@ class IGClient:
                         "details": exc.details,
                     }
                 )
+                if _is_historical_allowance_error(exc):
+                    raise IGRateLimitError(
+                        "IG historical data allowance exceeded",
+                        details={"attempts": attempt_errors, "errorCode": _ig_error_code(exc)},
+                    ) from exc
                 continue
 
             if _price_count(payload) + self.price_request_tolerance >= bounded_limit:
@@ -299,6 +304,15 @@ def _decimal_or_none(value: Any) -> Decimal | None:
 def _price_count(payload: dict[str, Any]) -> int:
     prices = payload.get("prices")
     return len(prices) if isinstance(prices, list) else 0
+
+
+def _is_historical_allowance_error(exc: IGClientError) -> bool:
+    return _ig_error_code(exc) == "error.public-api.exceeded-account-historical-data-allowance"
+
+
+def _ig_error_code(exc: IGClientError) -> str | None:
+    details = exc.details
+    return details.get("errorCode") if isinstance(details, dict) else None
 
 
 def _historical_range(resolution: str, limit: int) -> tuple[datetime, datetime]:

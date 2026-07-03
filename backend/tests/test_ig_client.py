@@ -1,6 +1,6 @@
 from typing import Any
 
-from app.services.ig_client import IGClient, IGClientError, sanitize_ig_account
+from app.services.ig_client import IGClient, IGClientError, IGRateLimitError, IGRequestRejectedError, sanitize_ig_account
 
 
 class RecordingIGClient(IGClient):
@@ -163,3 +163,23 @@ def test_historical_prices_tries_v2_max_query_after_numpoints_rejection():
         "version": "2",
         "retry_on_expired_session": True,
     }
+
+
+def test_historical_prices_stops_after_historical_allowance_error():
+    client = RecordingIGClient()
+    client.responses = [
+        IGRequestRejectedError(
+            "IG rejected the request with HTTP 403",
+            details={"errorCode": "error.public-api.exceeded-account-historical-data-allowance"},
+        ),
+        {"prices": [{} for _ in range(300)]},
+    ]
+
+    try:
+        client.get_historical_prices("CS.D.EURUSD.CFD.IP", "HOUR", 300)
+    except IGRateLimitError as exc:
+        assert str(exc) == "IG historical data allowance exceeded"
+        assert exc.details["errorCode"] == "error.public-api.exceeded-account-historical-data-allowance"
+        assert len(client.calls) == 1
+    else:
+        raise AssertionError("Expected historical data allowance error")
