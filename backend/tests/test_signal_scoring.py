@@ -146,3 +146,30 @@ def test_trend_line_scoring_components_are_explicit_and_bounded():
 
     assert all(components[name].passed for name in names)
     assert sum(component.max_score for component in result.components) == 100
+
+
+def test_multi_timeframe_conflict_is_an_explicit_negative_penalty():
+    strategy = StrategyResult(
+        strategy="trend_continuation", direction="BUY", score=90,
+        components={"ema_alignment": 25}, risk_reward_ratio=Decimal("2.0"),
+    )
+    evaluation = StrategyEvaluation(
+        pair="EURUSD", epic="TEST", timeframe="5m", direction="BUY", score=90, status="active",
+        strategy=strategy.strategy, entry_reference_price=Decimal("1.1"), suggested_stop=Decimal("1.09"),
+        suggested_target=Decimal("1.12"), risk_reward_ratio=Decimal("2"), reasons=[], filters_passed=[],
+        filters_failed=[], components=[strategy],
+    )
+
+    baseline = apply_configurable_scoring(evaluation, settings=DEFAULT_SCORING_SETTINGS)
+    conflicted = apply_configurable_scoring(
+        evaluation,
+        settings=DEFAULT_SCORING_SETTINGS,
+        multi_timeframe_penalty=20,
+        multi_timeframe_details="Strong 1h conflict.",
+    )
+    penalty = conflicted.components[-1]
+
+    assert conflicted.score == baseline.score - 20
+    assert penalty.name == "multi_timeframe_conflict"
+    assert penalty.score == -20
+    assert penalty.max_score == 0

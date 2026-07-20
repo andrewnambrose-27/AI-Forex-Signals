@@ -9,6 +9,7 @@ from typing import Any
 from app.models.economic_event import EconomicEvent
 from app.services.signal_engine import StrategyResult, evaluate_strategy_candidates
 from app.services.signal_scoring import DEFAULT_SCORING_SETTINGS, apply_configurable_scoring
+from app.services.multi_timeframe import TIMEFRAME_RELATIONSHIPS, analyze_multi_timeframe, candle_close_time, closed_candles_available_at
 
 
 @dataclass(frozen=True)
@@ -40,28 +41,34 @@ def run_backtest(
     timeframe: str,
     primary_candles: list[Any],
     higher_candles: list[Any],
+    confirmation_candles: list[Any] | None = None,
+    bias_candles: list[Any] | None = None,
     economic_events: list[EconomicEvent],
     minimum_score: int,
     spread_points: float,
     slippage_points: float,
 ) -> BacktestResult:
     candles = sorted(primary_candles, key=lambda candle: candle.opened_at)
-    higher = sorted(higher_candles, key=lambda candle: candle.opened_at)
+    confirmation_timeframe, bias_timeframe = TIMEFRAME_RELATIONSHIPS[timeframe.lower()]
+    confirmation = sorted(confirmation_candles if confirmation_candles is not None else higher_candles, key=lambda candle: candle.opened_at)
+    bias = sorted(bias_candles if bias_candles is not None else higher_candles, key=lambda candle: candle.opened_at)
     trades: list[BacktestTrade] = []
     skipped_signals = 0
     index = 80
 
     while index < len(candles) - 2:
-        signal_time = _aware(candles[index].opened_at)
+        signal_time = candle_close_time(candles[index], timeframe.lower())
         primary_window = candles[: index + 2]
-        higher_window = [candle for candle in higher if _aware(candle.opened_at) <= signal_time]
-        if len(higher_window) < 61:
+        confirmation_window = closed_candles_available_at(confirmation, confirmation_timeframe, signal_time) if confirmation_timeframe else []
+        bias_window = closed_candles_available_at(bias, bias_timeframe, signal_time) if bias_timeframe else []
+        strategy_higher = confirmation_window or bias_window
+        if len(strategy_higher) < 61:
             index += 1
             continue
 
         candidates = [
             candidate
-            for candidate in evaluate_strategy_candidates(primary_window, [*higher_window, higher_window[-1]])
+            for candidate in evaluate_strategy_candidates(primary_window, [*strategy_higher, strategy_higher[-1]])
             if candidate.direction in {"BUY", "SELL"}
         ]
         if not candidates:
@@ -69,13 +76,25 @@ def run_backtest(
             continue
 
         for candidate in candidates:
+            timeframe_candles = {timeframe.lower(): candles[: index + 1]}
+            if confirmation_timeframe:
+                timeframe_candles[confirmation_timeframe] = confirmation_window
+            if bias_timeframe:
+                timeframe_candles[bias_timeframe] = bias_window
+            multi_timeframe = analyze_multi_timeframe(
+                timeframe_candles,
+                entry_timeframe=timeframe,
+                signal_direction=candidate.direction,
+            )
             scored = apply_configurable_scoring(
                 _evaluation_stub(pair, timeframe, candidate),
                 settings=DEFAULT_SCORING_SETTINGS,
                 minimum_score_override=minimum_score,
                 news_blocked=_in_news_window(signal_time, pair, economic_events),
+                multi_timeframe_penalty=multi_timeframe.score_penalty,
+                multi_timeframe_details=multi_timeframe.reasons[-1],
             )
-            if scored.score < minimum_score:
+            if multi_timeframe.strong_conflict or scored.score < minimum_score:
                 skipped_signals += 1
                 continue
             trade = _simulate_trade(

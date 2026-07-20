@@ -3,6 +3,8 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field
 
+from app.schemas.multi_timeframe import MultiTimeframeAnalysisRead
+
 
 class SignalRequest(BaseModel):
     symbol: str = Field(..., examples=["EURUSD"])
@@ -86,3 +88,4 @@ class SignalEvaluationRead(BaseModel):
     components: list[SignalComponentRead] = []
     score_components: list[SignalScoreComponentRead] = []
     score_disclaimer: str = "Signal score is a rules-based quality score, not a guaranteed win probability."
+    multi_timeframe: MultiTimeframeAnalysisRead | None = None

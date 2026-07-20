@@ -7,6 +7,7 @@ os.environ.setdefault("JWT_SECRET_KEY", "test-secret")
 from app.services.backtesting import run_backtest
 from app.services.market_structure import analyze_market_structure
 from app.services.trend_lines import detect_trend_lines
+from app.services.multi_timeframe import closed_candles_available_at
 
 
 def rising_candles(count: int = 260, start: float = 1.1000):
@@ -113,3 +114,11 @@ def test_walk_forward_trend_lines_use_only_confirmed_anchors_and_ignore_open_fut
             opened_at=cutoff + timedelta(minutes=5), open=1.1, high=2.0, low=0.1, close=0.1, is_closed=False
         )
         assert detect_trend_lines([*prefix, open_future], left_candles=1, right_candles=1, minimum_anchor_distance=5) == result
+
+
+def test_backtest_higher_timeframe_window_excludes_candle_until_it_closes():
+    opened_at = datetime(2026, 7, 1, 10, 0, tzinfo=timezone.utc)
+    one_hour_candle = SimpleNamespace(opened_at=opened_at, open=1.1, high=1.2, low=1.0, close=1.15)
+
+    assert closed_candles_available_at([one_hour_candle], "1h", opened_at + timedelta(minutes=59, seconds=59)) == []
+    assert closed_candles_available_at([one_hour_candle], "1h", opened_at + timedelta(hours=1)) == [one_hour_candle]

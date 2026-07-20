@@ -1,6 +1,7 @@
+from dataclasses import asdict
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from sqlalchemy import select
 
 from app.api.deps import DbSession
@@ -17,7 +18,8 @@ from app.schemas.signal import (
     SignalScoringSettingsRead,
     SignalScoringSettingsUpdate,
 )
-from app.services.ig_client import IGClient, IGClientError, parse_ig_candle
+from app.api.routes.ig import fetch_candles
+from app.services.multi_timeframe import analyze_multi_timeframe, required_timeframes
 from app.services.economic_calendar import evaluate_pair_news_risk
 from app.services.signal_scoring import (
     SCORE_DISCLAIMER,
@@ -26,7 +28,7 @@ from app.services.signal_scoring import (
     get_scoring_settings,
     update_scoring_settings,
 )
-from app.services.signal_engine import StrategyEvaluation, StrategyResult, apply_trend_line_scoring_context, apply_zone_scoring_context, evaluate_strategies, generate_signal
+from app.services.signal_engine import StrategyEvaluation, StrategyResult, apply_multi_timeframe_context, apply_trend_line_scoring_context, apply_zone_scoring_context, evaluate_strategies, generate_signal
 
 router = APIRouter(prefix="/signals", tags=["signals"])
 
@@ -68,6 +70,12 @@ def evaluate_signal(payload: SignalEvaluateRequest, db: DbSession) -> SignalEval
         evaluation,
         primary_candles=candles_by_timeframe.get(payload.timeframe.lower(), []),
     )
+    multi_timeframe = analyze_multi_timeframe(
+        candles_by_timeframe,
+        entry_timeframe=payload.timeframe,
+        signal_direction=evaluation.direction,
+    )
+    apply_multi_timeframe_context(evaluation, multi_timeframe)
     risk = evaluate_pair_news_risk(db, payload.pair)
     if risk.blocked:
         evaluation.status = "filtered"
@@ -84,12 +92,16 @@ def evaluate_signal(payload: SignalEvaluateRequest, db: DbSession) -> SignalEval
         settings=get_scoring_settings(db),
         minimum_score_override=payload.minimum_score,
         news_blocked=risk.blocked,
+        multi_timeframe_penalty=multi_timeframe.score_penalty,
+        multi_timeframe_details=multi_timeframe.reasons[-1],
     )
     evaluation.score = scoring.score
     evaluation.reasons = [*scoring.reasons, *evaluation.reasons]
     evaluation.filters_passed = [*evaluation.filters_passed, *scoring.filters_passed]
     evaluation.filters_failed = [*evaluation.filters_failed, *scoring.filters_failed]
     if evaluation.direction not in {"BUY", "SELL"}:
+        evaluation.status = "filtered"
+    elif multi_timeframe.strong_conflict:
         evaluation.status = "filtered"
     elif scoring.score < scoring.minimum_score:
         evaluation.status = "filtered"
@@ -125,74 +137,11 @@ def update_scoring_settings_route(payload: SignalScoringSettingsUpdate, db: DbSe
 
 
 def _load_strategy_candles(db: DbSession, epic: str, timeframe: str, limit: int) -> list[Candle]:
-    normalized_timeframe = timeframe.lower()
-    resolution = _resolution_for_timeframe(normalized_timeframe)
-
-    try:
-        payload = IGClient().get_historical_prices(epic, resolution, limit)
-    except IGClientError as exc:
-        stored = _stored_candles(db, epic, resolution, limit)
-        if stored:
-            return stored
-        raise HTTPException(status_code=exc.status_code, detail={"message": str(exc), "details": exc.details}) from exc
-
-    candles: list[Candle] = []
-    for raw_price in payload.get("prices", []):
-        parsed = parse_ig_candle(raw_price, epic, resolution)
-        if parsed is None:
-            continue
-        candles.append(_upsert_candle(db, parsed))
-
-    db.commit()
-    return sorted(candles or _stored_candles(db, epic, resolution, limit), key=lambda candle: candle.opened_at)
-
-
-def _stored_candles(db: DbSession, epic: str, resolution: str, limit: int) -> list[Candle]:
-    query = (
-        select(Candle)
-        .where(Candle.epic == epic, Candle.resolution == resolution, Candle.provider == "ig")
-        .order_by(Candle.opened_at.desc())
-        .limit(limit)
-    )
-    return sorted(db.scalars(query), key=lambda candle: candle.opened_at)
-
-
-def _upsert_candle(db: DbSession, parsed: dict[str, Any]) -> Candle:
-    existing = db.scalar(
-        select(Candle).where(
-            Candle.epic == parsed["epic"],
-            Candle.resolution == parsed["resolution"],
-            Candle.opened_at == parsed["opened_at"],
-        )
-    )
-
-    if existing:
-        for key, value in parsed.items():
-            setattr(existing, key, value)
-        return existing
-
-    candle = Candle(**parsed)
-    db.add(candle)
-    return candle
+    return fetch_candles(db=db, epic=epic, resolution=timeframe, limit=limit)["candles"]
 
 
 def _required_timeframes(timeframe: str) -> list[str]:
-    normalized = timeframe.lower()
-    higher = {"5m": "15m", "15m": "1h", "1h": "4h", "4h": "1d", "1d": "1d"}.get(normalized, "4h")
-    return [normalized] if normalized == higher else [normalized, higher]
-
-
-def _resolution_for_timeframe(timeframe: str) -> str:
-    resolutions = {
-        "5m": "MINUTE_5",
-        "15m": "MINUTE_15",
-        "1h": "HOUR",
-        "4h": "HOUR_4",
-        "1d": "DAY",
-    }
-    if timeframe not in resolutions:
-        raise HTTPException(status_code=400, detail=f"Unsupported timeframe: {timeframe}")
-    return resolutions[timeframe]
+    return required_timeframes(timeframe)
 
 
 def _evaluation_response(evaluation: StrategyEvaluation) -> SignalEvaluationRead:
@@ -214,6 +163,7 @@ def _evaluation_response(evaluation: StrategyEvaluation) -> SignalEvaluationRead
         components=[_component_response(component) for component in evaluation.components],
         score_components=[_score_component_response(component) for component in getattr(evaluation, "score_components", [])],
         score_disclaimer=SCORE_DISCLAIMER,
+        multi_timeframe=asdict(evaluation.multi_timeframe) if evaluation.multi_timeframe else None,
     )
 
 

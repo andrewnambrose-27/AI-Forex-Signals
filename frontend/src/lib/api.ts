@@ -80,6 +80,7 @@ export type LiveChartLoadResult = {
   marketStructure?: MarketStructure | null;
   zoneAnalysis?: ZoneAnalysis | null;
   trendLineAnalysis?: TrendLineAnalysis | null;
+  multiTimeframeAnalysis?: MultiTimeframeAnalysis | null;
   epic?: string;
   error?: string;
   requestedCandles?: number;
@@ -171,6 +172,40 @@ export type TrendLineAnalysis = {
   minimum_anchor_distance: number;
   closed_candle_count: number;
   lines: TrendLine[];
+  reasons: string[];
+};
+
+export type TimeframeState = {
+  timeframe: string;
+  role: "entry" | "confirmation" | "directional_bias";
+  direction: "bullish" | "bearish" | "neutral" | "insufficient_data";
+  ema_alignment: "bullish" | "bearish" | "neutral" | "insufficient_data";
+  market_structure: string;
+  adx: number | null;
+  trend_strength: "strong" | "moderate" | "weak" | "insufficient_data";
+  support_zones: number;
+  resistance_zones: number;
+  zone_context: "support_nearby" | "resistance_nearby" | "balanced" | "none";
+  recent_structure_break: "bullish" | "bearish" | "none";
+  confidence_score: number;
+  closed_candle_count: number;
+  latest_closed_at: string | null;
+  reasons: string[];
+};
+
+export type MultiTimeframeAnalysis = {
+  symbol: string;
+  entry_timeframe: string;
+  confirmation_timeframe: string | null;
+  directional_bias_timeframe: string | null;
+  entry_state: TimeframeState;
+  confirmation_state: TimeframeState | null;
+  higher_timeframe_state: TimeframeState | null;
+  result: "aligned" | "mixed" | "conflicting";
+  overall_direction: "bullish" | "bearish" | "neutral" | "insufficient_data";
+  overall_summary: string;
+  score_penalty: number;
+  strong_conflict: boolean;
   reasons: string[];
 };
 
@@ -283,10 +318,11 @@ export async function loadChartData(symbol: string, timeframe: Timeframe): Promi
       throw new Error("Backend returned no candles");
     }
 
-    const [marketStructure, zoneAnalysis, trendLineAnalysis] = await Promise.all([
+    const [marketStructure, zoneAnalysis, trendLineAnalysis, multiTimeframeAnalysis] = await Promise.all([
       fetchMarketStructure(symbol, timeframe).catch(() => null),
       fetchZones(symbol, timeframe).catch(() => null),
-      fetchTrendLines(symbol, timeframe).catch(() => null)
+      fetchTrendLines(symbol, timeframe).catch(() => null),
+      fetchMultiTimeframe(symbol, timeframe).catch(() => null)
     ]);
 
     return {
@@ -295,6 +331,7 @@ export async function loadChartData(symbol: string, timeframe: Timeframe): Promi
       marketStructure,
       zoneAnalysis,
       trendLineAnalysis,
+      multiTimeframeAnalysis,
       epic,
       requestedCandles: candleBootstrap.requested_count,
       loadedCandles: candleBootstrap.loaded_count,
@@ -333,6 +370,15 @@ export async function fetchTrendLines(symbol: string, timeframe: Timeframe): Pro
   const response = await fetch(`${API_BASE_URL}/api/analysis/trend-lines?${params.toString()}`);
   if (!response.ok) {
     throw new Error(await responseErrorMessage(response, "Trend-line fetch failed"));
+  }
+  return response.json();
+}
+
+export async function fetchMultiTimeframe(symbol: string, timeframe: Timeframe): Promise<MultiTimeframeAnalysis> {
+  const params = new URLSearchParams({ symbol, timeframe });
+  const response = await fetch(`${API_BASE_URL}/api/analysis/multi-timeframe?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Multi-timeframe analysis fetch failed"));
   }
   return response.json();
 }

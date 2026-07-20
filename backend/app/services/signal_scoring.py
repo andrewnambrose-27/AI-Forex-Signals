@@ -84,13 +84,27 @@ def apply_configurable_scoring(
     settings: dict[str, Any],
     minimum_score_override: int | None = None,
     news_blocked: bool = False,
+    multi_timeframe_penalty: int = 0,
+    multi_timeframe_details: str | None = None,
 ) -> ScoringResult:
     normalized_settings = _normalize_settings(settings)
     weights = normalized_settings["weights"]
     minimum_score = minimum_score_override if minimum_score_override is not None else int(normalized_settings["minimum_score"])
     best = _selected_strategy(evaluation)
     components = _score_components(best, weights, news_blocked=news_blocked)
-    score = sum(component.score for component in components)
+    if multi_timeframe_penalty > 0:
+        components.append(
+            ScoreComponent(
+                name="multi_timeframe_conflict",
+                category="penalty",
+                score=-min(100, multi_timeframe_penalty),
+                max_score=0,
+                passed=False,
+                details=multi_timeframe_details or "Higher-timeframe evidence conflicts with the entry timeframe.",
+                raw_data={"penalty": multi_timeframe_penalty},
+            )
+        )
+    score = max(0, sum(component.score for component in components))
     filters_passed = [component.name for component in components if component.passed]
     filters_failed = [component.name for component in components if not component.passed]
     reasons = _score_reasons(components, score, minimum_score)

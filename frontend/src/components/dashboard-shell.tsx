@@ -252,7 +252,7 @@ export function DashboardShell() {
             zoneAnalysis={chartResult.zoneAnalysis}
             trendLineAnalysis={chartResult.trendLineAnalysis}
           />
-          <SignalPanel signal={latestSignal} />
+          <SignalPanel signal={latestSignal} multiTimeframe={chartResult.multiTimeframeAnalysis} />
         </div>
       </main>
     </div>

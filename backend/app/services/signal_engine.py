@@ -8,6 +8,7 @@ from app.schemas.signal import SignalRead, SignalRequest
 from app.services.technical_indicators import adx, atr, bollinger_bands, ema_set, macd, rsi, support_resistance_zones
 from app.services.support_resistance import PriceZone, detect_support_resistance_zones
 from app.services.trend_lines import detect_trend_lines
+from app.services.multi_timeframe import MultiTimeframeAnalysis
 
 MIN_CLOSED_STRATEGY_CANDLES = 220
 MIN_CLOSED_BACKTEST_CANDLES = 60
@@ -54,6 +55,27 @@ class StrategyEvaluation:
     filters_failed: list[str]
     components: list[StrategyResult]
     score_components: list[Any] = field(default_factory=list)
+    multi_timeframe: MultiTimeframeAnalysis | None = None
+
+
+def apply_multi_timeframe_context(evaluation: StrategyEvaluation, analysis: MultiTimeframeAnalysis) -> None:
+    evaluation.multi_timeframe = analysis
+    evaluation.reasons = [*analysis.reasons, *evaluation.reasons]
+    if analysis.result == "aligned":
+        evaluation.filters_passed.append("multi_timeframe_alignment")
+    elif analysis.strong_conflict:
+        evaluation.filters_failed.append("strong_higher_timeframe_conflict")
+    else:
+        evaluation.filters_failed.append(f"multi_timeframe_{analysis.result}")
+    selected = next((result for result in evaluation.components if result.strategy == evaluation.strategy), None)
+    if selected is not None:
+        selected.components.update(
+            {
+                "multi_timeframe_result": analysis.result,
+                "multi_timeframe_penalty": analysis.score_penalty,
+                "strong_higher_timeframe_conflict": analysis.strong_conflict,
+            }
+        )
 
 
 def generate_signal(payload: SignalRequest) -> SignalRead:
