@@ -11,7 +11,9 @@ import {
   type SeriesMarker,
   type Time
 } from "lightweight-charts";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+
+import type { MarketStructure } from "@/lib/api";
 
 type ChartPanelProps = {
   symbol: string;
@@ -28,6 +30,7 @@ type ChartPanelProps = {
   loadedCandles?: number;
   candleWarning?: string | null;
   livePreviewCandle?: CandlestickData | null;
+  marketStructure?: MarketStructure | null;
 };
 
 export function ChartPanel({
@@ -44,7 +47,8 @@ export function ChartPanel({
   requestedCandles,
   loadedCandles,
   candleWarning,
-  livePreviewCandle
+  livePreviewCandle,
+  marketStructure
 }: ChartPanelProps) {
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -53,7 +57,14 @@ export function ChartPanel({
   const ema50Ref = useRef<ISeriesApi<"Line"> | null>(null);
   const ema200Ref = useRef<ISeriesApi<"Line"> | null>(null);
   const previousViewportKeyRef = useRef("");
+  const [showMarketStructure, setShowMarketStructure] = useState(true);
   const candleDateRange = formatCandleDateRange(candles);
+  const visibleMarkers = useMemo(() => {
+    if (!showMarketStructure) {
+      return markers;
+    }
+    return [...markers, ...marketStructureMarkers(marketStructure)].sort((left, right) => Number(left.time) - Number(right.time));
+  }, [markers, marketStructure, showMarketStructure]);
 
   useEffect(() => {
     if (!chartContainerRef.current) {
@@ -123,7 +134,7 @@ export function ChartPanel({
 
   useEffect(() => {
     candleSeriesRef.current?.setData(candles);
-    candleSeriesRef.current?.setMarkers(markers);
+    candleSeriesRef.current?.setMarkers(visibleMarkers);
     ema20Ref.current?.setData(ema20);
     ema50Ref.current?.setData(ema50);
     ema200Ref.current?.setData(ema200);
@@ -137,7 +148,7 @@ export function ChartPanel({
       });
       previousViewportKeyRef.current = viewportKey;
     }
-  }, [dataSource, epic, symbol, timeframe, candles, ema20, ema50, ema200, markers]);
+  }, [dataSource, epic, symbol, timeframe, candles, ema20, ema50, ema200, visibleMarkers]);
 
   useEffect(() => {
     if (!livePreviewCandle || !candleSeriesRef.current) {
@@ -171,6 +182,15 @@ export function ChartPanel({
           <span>{loadedCandles ?? candles.length} candles loaded{requestedCandles ? ` / ${requestedCandles} requested` : ""}</span>
           {candleDateRange ? <span>{candleDateRange}</span> : null}
           <span>{ema200WarmingUp ? "EMA 200 warming up" : "EMA 20 / 50 / 200"}</span>
+          {marketStructure ? <span>Structure {marketStructure.direction} · {marketStructure.confidence_score}%</span> : null}
+          <button
+            className={`structure-toggle ${showMarketStructure ? "active" : ""}`}
+            type="button"
+            aria-pressed={showMarketStructure}
+            onClick={() => setShowMarketStructure((value) => !value)}
+          >
+            Market structure
+          </button>
         </div>
       </div>
       {candleWarning ? <div className="chart-warning">{candleWarning}</div> : null}
@@ -195,9 +215,27 @@ export function ChartPanel({
         <span>
           <i className="legend-dot signal" /> Signal markers
         </span>
+        {showMarketStructure ? (
+          <span>
+            <i className="legend-dot structure" /> HH / HL / LH / LL
+          </span>
+        ) : null}
       </div>
     </section>
   );
+}
+
+function marketStructureMarkers(marketStructure?: MarketStructure | null): SeriesMarker<Time>[] {
+  if (!marketStructure) {
+    return [];
+  }
+  return marketStructure.recent_structure_points.map((point) => ({
+    time: Math.floor(new Date(point.time).getTime() / 1000) as Time,
+    position: point.kind === "high" ? "aboveBar" : "belowBar",
+    color: point.classification === "HH" || point.classification === "HL" ? "#38bdf8" : "#f97316",
+    shape: "circle",
+    text: point.classification
+  }));
 }
 
 function dataSourceLabel(dataSource: "ig" | "mock" | "unavailable"): string {
