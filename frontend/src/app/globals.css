@@ -274,6 +274,23 @@ button:disabled {
   font-weight: 800;
 }
 
+.structure-toggle {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.82);
+  color: var(--muted);
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.structure-toggle.active {
+  border-color: rgba(56, 189, 248, 0.55);
+  background: rgba(56, 189, 248, 0.12);
+  color: #7dd3fc;
+}
+
 .chart-canvas {
   position: relative;
   height: 560px;
@@ -350,6 +367,10 @@ button:disabled {
 
 .legend-dot.signal {
   background: #22c55e;
+}
+
+.legend-dot.structure {
+  background: linear-gradient(135deg, #38bdf8 50%, #f97316 50%);
 }
 
 .signal-sidebar {
