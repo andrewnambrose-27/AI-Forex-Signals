@@ -176,6 +176,12 @@ export function updateChartDataWithLivePrice(dataSet: ChartDataSet, symbol: stri
 }
 
 export function applyStreamedCandleUpdate(dataSet: ChartDataSet, symbol: string, timeframe: Timeframe, update: LiveCandleUpdate): ChartDataSet {
+  // The live preview is rendered separately by ChartPanel. Keeping it out of
+  // this array ensures indicators and signals see closed candles only.
+  if (!update.isClosed) {
+    return dataSet;
+  }
+
   const candles = [...dataSet.candles];
   const updateTime = Number(update.time);
   const existingIndex = candles.findIndex((candle) => Number(candle.time) === updateTime);
@@ -194,14 +200,7 @@ export function applyStreamedCandleUpdate(dataSet: ChartDataSet, symbol: string,
     candles.sort((left, right) => Number(left.time) - Number(right.time));
   }
 
-  if (update.isClosed) {
-    return buildChartDataFromCandles(symbol, timeframe, candles);
-  }
-
-  return {
-    ...dataSet,
-    candles
-  };
+  return buildChartDataFromCandles(symbol, timeframe, candles);
 }
 
 export function getLatestSignal(symbol: string, timeframe: Timeframe, dataSet: ChartDataSet) {

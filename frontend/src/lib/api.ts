@@ -77,12 +77,36 @@ export type CandleBootstrap = {
 export type LiveChartLoadResult = {
   chartData: ChartDataSet;
   dataSource: "ig" | "mock" | "unavailable";
+  marketStructure?: MarketStructure | null;
   epic?: string;
   error?: string;
   requestedCandles?: number;
   loadedCandles?: number;
   candleWarning?: string | null;
   droppedIncompleteCurrentCandle?: boolean;
+};
+
+export type StructurePoint = {
+  index: number;
+  time: string;
+  confirmed_at: string;
+  price: number;
+  kind: "high" | "low";
+  classification: "HH" | "HL" | "LH" | "LL";
+};
+
+export type MarketStructure = {
+  symbol: string;
+  timeframe: string;
+  latest_confirmed_swing_high: Omit<StructurePoint, "classification"> | null;
+  latest_confirmed_swing_low: Omit<StructurePoint, "classification"> | null;
+  recent_structure_points: StructurePoint[];
+  direction: "bullish" | "bearish" | "ranging" | "insufficient_data";
+  confidence_score: number;
+  reasons: string[];
+  left_candles: number;
+  right_candles: number;
+  closed_candle_count: number;
 };
 
 export type LiveQuote = {
@@ -194,9 +218,12 @@ export async function loadChartData(symbol: string, timeframe: Timeframe): Promi
       throw new Error("Backend returned no candles");
     }
 
+    const marketStructure = await fetchMarketStructure(symbol, timeframe).catch(() => null);
+
     return {
       chartData: buildChartDataFromCandles(symbol, timeframe, candles),
       dataSource: "ig",
+      marketStructure,
       epic,
       requestedCandles: candleBootstrap.requested_count,
       loadedCandles: candleBootstrap.loaded_count,
@@ -210,6 +237,15 @@ export async function loadChartData(symbol: string, timeframe: Timeframe): Promi
       error: error instanceof Error ? error.message : "Unable to load IG candles"
     };
   }
+}
+
+export async function fetchMarketStructure(symbol: string, timeframe: Timeframe): Promise<MarketStructure> {
+  const params = new URLSearchParams({ symbol, timeframe });
+  const response = await fetch(`${API_BASE_URL}/api/analysis/market-structure?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Market structure fetch failed"));
+  }
+  return response.json();
 }
 
 export async function resolveMarketEpic(symbol: string): Promise<string> {
