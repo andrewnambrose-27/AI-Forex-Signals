@@ -5,6 +5,7 @@ from types import SimpleNamespace
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret")
 
 from app.services.backtesting import run_backtest
+from app.services.market_structure import analyze_market_structure
 
 
 def rising_candles(count: int = 260, start: float = 1.1000):
@@ -66,3 +67,27 @@ def test_backtest_empty_result_has_zero_metrics():
 
     assert result.metrics["number_of_trades"] == 0
     assert result.metrics["win_rate"] == 0
+
+
+def test_walk_forward_structure_never_receives_future_candles():
+    candles = rising_candles(40)
+    # Add deterministic alternating swings to otherwise rising test data.
+    for index, offset in enumerate((0, 4, 2, -2, 1, 5, 3, -1, 2, 6, 4, 0, 3, 7, 5, 1)):
+        candle = candles[index]
+        midpoint = 1.10 + offset * 0.001
+        candles[index] = SimpleNamespace(
+            opened_at=candle.opened_at,
+            open=midpoint,
+            high=midpoint + 0.0004,
+            low=midpoint - 0.0004,
+            close=midpoint,
+        )
+
+    for end_index in range(5, 16):
+        walk_forward = analyze_market_structure(candles[: end_index + 1], left_candles=1, right_candles=2)
+        later = analyze_market_structure(candles[: min(len(candles), end_index + 8)], left_candles=1, right_candles=2)
+        cutoff = candles[end_index].opened_at
+        later_points_available_then = [point for point in later.recent_structure_points if point.confirmed_at <= cutoff]
+
+        assert later_points_available_then == walk_forward.recent_structure_points
+        assert all(point.confirmed_at <= cutoff for point in walk_forward.recent_structure_points)

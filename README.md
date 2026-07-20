@@ -12,6 +12,7 @@ This application is signal-only. It does not connect to a broker and must not pl
 - Candlestick chart page scaffold
 - Signal engine endpoint
 - Signal score from 0 to 100
+- Confirmed HH/HL/LH/LL market-structure analysis with no lookahead
 - Risk and news filter placeholders
 - Signal history endpoint and dashboard panel
 - Environment variables for API keys and secrets
@@ -87,6 +88,7 @@ If the Cloudflare Pages project root is already set to `frontend`, use `npm inst
 - `GET /api/ig/accounts` logs in to IG DEMO and returns sanitized account names, types, IDs, and preferred/default flags.
 - `GET /api/markets/search?q=EURUSD` searches IG markets.
 - `GET /api/candles?epic={epic}&resolution=HOUR&limit=100` fetches IG historical prices, stores raw candle data, and returns normalized candles.
+- `GET /api/analysis/market-structure?symbol=EURUSD&timeframe=5m` returns confirmed swings, classified structure points, direction, confidence, and reasons. Optional `left_candles` and `right_candles` parameters default to 3.
 - `POST /api/v1/auth/register` creates a user.
 - `POST /api/v1/auth/login` is a placeholder for JWT login.
 - `GET /api/v1/watchlist` lists watchlist pairs.
