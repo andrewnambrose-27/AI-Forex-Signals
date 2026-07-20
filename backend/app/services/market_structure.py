@@ -56,31 +56,16 @@ def analyze_market_structure(
         raise ValueError("recent_limit must be at least 1")
 
     closed = sorted((_normalize(candle) for candle in candles if _is_closed(candle)), key=lambda candle: candle.time)
-    swing_highs: list[SwingPoint] = []
-    swing_lows: list[SwingPoint] = []
+    pivots = detect_confirmed_pivots(candles, left_candles=left_candles, right_candles=right_candles)
+    swing_highs = [point for point in pivots if point.kind == "high"]
+    swing_lows = [point for point in pivots if point.kind == "low"]
     structure_points: list[StructurePoint] = []
 
-    for index in range(left_candles, len(closed) - right_candles):
-        candle = closed[index]
-        left = closed[index - left_candles : index]
-        right = closed[index + 1 : index + right_candles + 1]
-        confirmed_at = closed[index + right_candles].time
-
-        if all(candle.high > neighbour.high for neighbour in (*left, *right)):
-            point = SwingPoint(index=index, time=candle.time, confirmed_at=confirmed_at, price=candle.high, kind="high")
-            if swing_highs:
-                structure_points.append(
-                    StructurePoint(**point.__dict__, classification="HH" if point.price > swing_highs[-1].price else "LH")
-                )
-            swing_highs.append(point)
-
-        if all(candle.low < neighbour.low for neighbour in (*left, *right)):
-            point = SwingPoint(index=index, time=candle.time, confirmed_at=confirmed_at, price=candle.low, kind="low")
-            if swing_lows:
-                structure_points.append(
-                    StructurePoint(**point.__dict__, classification="HL" if point.price > swing_lows[-1].price else "LL")
-                )
-            swing_lows.append(point)
+    for points, higher_label, lower_label in ((swing_highs, "HH", "LH"), (swing_lows, "HL", "LL")):
+        for previous, point in zip(points, points[1:]):
+            structure_points.append(
+                StructurePoint(**point.__dict__, classification=higher_label if point.price > previous.price else lower_label)
+            )
 
     structure_points.sort(key=lambda point: (point.confirmed_at, point.time, point.kind))
     direction, confidence, reasons = _classify_state(swing_highs, swing_lows, structure_points)
@@ -95,6 +80,28 @@ def analyze_market_structure(
         right_candles=right_candles,
         closed_candle_count=len(closed),
     )
+
+
+def detect_confirmed_pivots(
+    candles: list[Any],
+    *,
+    left_candles: int = 3,
+    right_candles: int = 3,
+) -> list[SwingPoint]:
+    if left_candles < 1 or right_candles < 1:
+        raise ValueError("left_candles and right_candles must both be at least 1")
+
+    closed = sorted((_normalize(candle) for candle in candles if _is_closed(candle)), key=lambda candle: candle.time)
+    pivots: list[SwingPoint] = []
+    for index in range(left_candles, len(closed) - right_candles):
+        candle = closed[index]
+        neighbours = (*closed[index - left_candles : index], *closed[index + 1 : index + right_candles + 1])
+        confirmed_at = closed[index + right_candles].time
+        if all(candle.high > neighbour.high for neighbour in neighbours):
+            pivots.append(SwingPoint(index=index, time=candle.time, confirmed_at=confirmed_at, price=candle.high, kind="high"))
+        if all(candle.low < neighbour.low for neighbour in neighbours):
+            pivots.append(SwingPoint(index=index, time=candle.time, confirmed_at=confirmed_at, price=candle.low, kind="low"))
+    return sorted(pivots, key=lambda point: (point.confirmed_at, point.time, point.kind))
 
 
 @dataclass(frozen=True)

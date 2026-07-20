@@ -113,7 +113,7 @@ def _score_components(best: StrategyResult | None, weights: dict[str, int], *, n
     trend_score = _score_trend(best, weights["trend_alignment"])
     momentum_score = _score_momentum(best, weights["momentum_confirmation"])
     volatility_score = _score_volatility(best, weights["volatility_condition"])
-    sr_score = _score_support_resistance(best, weights["support_resistance_quality"])
+    zone_components = _score_zone_components(best, weights["support_resistance_quality"])
     rr_score = _linear_score(rr, 1.2, 2.0, weights["risk_reward_quality"])
     news_score = 0 if news_blocked else weights["news_safety"]
     spread_session_score = weights["spread_session_quality"]
@@ -122,7 +122,7 @@ def _score_components(best: StrategyResult | None, weights: dict[str, int], *, n
         _component("trend_alignment", weights["trend_alignment"], trend_score, trend_score >= weights["trend_alignment"] * 0.6, _detail_trend(best), data),
         _component("momentum_confirmation", weights["momentum_confirmation"], momentum_score, momentum_score >= weights["momentum_confirmation"] * 0.6, _detail_momentum(best), data),
         _component("volatility_condition", weights["volatility_condition"], volatility_score, volatility_score >= weights["volatility_condition"] * 0.6, _detail_volatility(best), data),
-        _component("support_resistance_quality", weights["support_resistance_quality"], sr_score, sr_score >= weights["support_resistance_quality"] * 0.6, _detail_support_resistance(best), data),
+        *zone_components,
         _component("risk_reward_quality", weights["risk_reward_quality"], rr_score, rr_score >= weights["risk_reward_quality"] * 0.6, f"Risk/reward is {rr:.2f}.", {"risk_reward_ratio": rr}),
         _component("news_safety", weights["news_safety"], news_score, not news_blocked, "No high-impact news block is active." if not news_blocked else "High-impact news window is active.", {}),
         _component("spread_session_quality", weights["spread_session_quality"], spread_session_score, True, "Spread/session checks are using default pass until live spread and session data are added.", {}),
@@ -170,6 +170,66 @@ def _score_support_resistance(result: StrategyResult, max_score: int) -> int:
     if result.components.get("pullback_reclaim") or result.components.get("range_break"):
         return round(max_score * 0.7)
     return round(max_score * 0.35)
+
+
+def _score_zone_components(result: StrategyResult, max_score: int) -> list[ScoreComponent]:
+    zone_weight = max(0, max_score)
+    entry_max = zone_weight * 4 // 15
+    target_max = zone_weight * 4 // 15
+    breakout_max = zone_weight * 4 // 15
+    retest_max = zone_weight - entry_max - target_max - breakout_max
+    entry_near = bool(result.components.get("entry_near_relevant_zone"))
+    obstructed = bool(result.components.get("target_obstructed_by_opposing_zone"))
+    breakout = bool(result.components.get("breakout_confirmation"))
+    retest = bool(result.components.get("retest_confirmation"))
+    touches = int(result.components.get("relevant_zone_touches") or 0)
+    opposing_r = result.components.get("opposing_zone_r_multiple")
+    if "entry_near_relevant_zone" not in result.components:
+        legacy_score = _score_support_resistance(result, max_score)
+        denominator = max(max_score, 1)
+        entry_score = round(legacy_score * entry_max / denominator)
+        target_score = round(legacy_score * target_max / denominator)
+        breakout_score = round(legacy_score * breakout_max / denominator)
+        retest_score = max(0, legacy_score - entry_score - target_score - breakout_score)
+    else:
+        entry_score = entry_max if entry_near else 0
+        target_score = 0 if obstructed else target_max
+        breakout_score = breakout_max if breakout else 0
+        retest_score = retest_max if retest else 0
+    return [
+        _component(
+            "entry_near_relevant_zone",
+            entry_max,
+            entry_score,
+            entry_near,
+            f"Entry is near a relevant zone confirmed by {touches} prior touches." if entry_near else "Entry is not near a relevant confirmed zone.",
+            {"touches": touches, "zone_type": result.components.get("relevant_zone_type")},
+        ),
+        _component(
+            "target_obstructed_by_opposing_zone",
+            target_max,
+            target_score,
+            not obstructed,
+            f"Target is obstructed by an opposing zone {float(opposing_r):.1f}R from entry." if obstructed and opposing_r is not None else "No confirmed opposing zone obstructs the target.",
+            {"obstructed": obstructed, "distance_r": opposing_r},
+        ),
+        _component(
+            "breakout_confirmation",
+            breakout_max,
+            breakout_score,
+            breakout,
+            "A closed candle broke the zone beyond its ATR buffer." if breakout else "No relevant buffered zone breakout is confirmed.",
+            {"confirmed": breakout},
+        ),
+        _component(
+            "retest_confirmation",
+            retest_max,
+            retest_score,
+            retest,
+            "A broken zone was retested successfully on a closed candle." if retest else "No confirmed break-and-retest is present.",
+            {"confirmed": retest},
+        ),
+    ]
 
 
 def _linear_score(value: float, low: float, high: float, max_score: int) -> int:

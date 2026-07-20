@@ -6,6 +6,7 @@ from typing import Any
 
 from app.schemas.signal import SignalRead, SignalRequest
 from app.services.technical_indicators import adx, atr, bollinger_bands, ema_set, macd, rsi, support_resistance_zones
+from app.services.support_resistance import PriceZone, detect_support_resistance_zones
 
 MIN_CLOSED_STRATEGY_CANDLES = 220
 MIN_CLOSED_BACKTEST_CANDLES = 60
@@ -165,6 +166,111 @@ def evaluate_strategy_candidates(primary: list[Any], higher: list[Any]) -> list[
         _breakout_volatility_expansion(closed_primary, closed_higher),
         _range_mean_reversion(closed_primary, closed_higher),
     ]
+
+
+def apply_zone_scoring_context(
+    evaluation: StrategyEvaluation,
+    *,
+    primary_candles: list[Any],
+    higher_candles: list[Any],
+) -> None:
+    """Attach closed-candle zone evidence to the strategy selected for scoring."""
+    if evaluation.direction not in {"BUY", "SELL"} or not evaluation.strategy or len(primary_candles) < 20:
+        return
+    if not all(hasattr(candle, "opened_at") or isinstance(candle, dict) and ("opened_at" in candle or "time" in candle) for candle in primary_candles):
+        return
+
+    closed_primary = primary_candles[:-1]
+    closed_higher = higher_candles[:-1] if higher_candles else []
+    higher_zones = detect_support_resistance_zones(closed_higher).zones if len(closed_higher) >= 20 else []
+    analysis = detect_support_resistance_zones(closed_primary, higher_timeframe_zones=higher_zones)
+    selected = next((result for result in evaluation.components if result.strategy == evaluation.strategy), None)
+    if selected is None or selected.entry_reference_price is None:
+        return
+
+    entry = float(selected.entry_reference_price)
+    stop = float(selected.suggested_stop) if selected.suggested_stop is not None else entry
+    target = float(selected.suggested_target) if selected.suggested_target is not None else entry
+    risk = abs(entry - stop)
+    atr_value = analysis.atr_14 or max(risk, entry * 0.001)
+    relevant = [zone for zone in analysis.zones if _zone_supports_direction(zone, evaluation.direction)]
+    nearest_relevant = min(relevant, key=lambda zone: _distance_to_zone(entry, zone), default=None)
+    entry_near = nearest_relevant is not None and _distance_to_zone(entry, nearest_relevant) <= atr_value * 0.5
+    opposing = _nearest_opposing_zone(entry, target, evaluation.direction, analysis.zones)
+    obstructed = opposing is not None and risk > 0
+    opposing_r = _opposing_distance_r(entry, evaluation.direction, opposing, risk) if obstructed and opposing else None
+    breakout = next(
+        (zone for zone in analysis.zones if zone.broken and zone.break_direction == ("above" if evaluation.direction == "BUY" else "below")),
+        None,
+    )
+    retest = next(
+        (zone for zone in analysis.zones if zone.retested and zone.break_direction == ("above" if evaluation.direction == "BUY" else "below")),
+        None,
+    )
+
+    selected.components.update(
+        {
+            "entry_near_relevant_zone": entry_near,
+            "relevant_zone_touches": nearest_relevant.confirmed_touches if nearest_relevant else 0,
+            "relevant_zone_type": nearest_relevant.type if nearest_relevant else None,
+            "target_obstructed_by_opposing_zone": obstructed,
+            "opposing_zone_r_multiple": round(opposing_r, 2) if opposing_r is not None else None,
+            "breakout_confirmation": breakout is not None,
+            "retest_confirmation": retest is not None,
+        }
+    )
+    if entry_near and nearest_relevant:
+        side = "support" if evaluation.direction == "BUY" else "resistance"
+        selected.reasons.append(
+            f"Price rejected a {side} zone confirmed by {nearest_relevant.confirmed_touches} prior touches."
+        )
+        selected.filters_passed.append("entry_near_relevant_zone")
+    if obstructed and opposing_r is not None:
+        side = "resistance" if evaluation.direction == "BUY" else "support"
+        relative_position = "above" if evaluation.direction == "BUY" else "below"
+        selected.reasons.append(f"Signal rejected because {side} is {opposing_r:.1f}R {relative_position} entry.")
+        selected.filters_failed.append("target_obstructed_by_opposing_zone")
+    if breakout:
+        selected.reasons.append("A closed candle confirmed the breakout beyond the zone ATR buffer.")
+        selected.filters_passed.append("zone_breakout_confirmation")
+    if retest:
+        role = "support" if evaluation.direction == "BUY" else "resistance"
+        selected.reasons.append(f"The broken zone was retested and held as {role} on a closed candle.")
+        selected.filters_passed.append("zone_retest_confirmation")
+    evaluation.reasons = [*selected.reasons]
+    evaluation.filters_passed = list(dict.fromkeys([*evaluation.filters_passed, *selected.filters_passed]))
+    evaluation.filters_failed = list(dict.fromkeys([*evaluation.filters_failed, *selected.filters_failed]))
+
+
+def _zone_supports_direction(zone: PriceZone, direction: str) -> bool:
+    if direction == "BUY":
+        return (not zone.broken and zone.type in {"support", "mixed"}) or (zone.retested and zone.break_direction == "above")
+    return (not zone.broken and zone.type in {"resistance", "mixed"}) or (zone.retested and zone.break_direction == "below")
+
+
+def _zone_opposes_direction(zone: PriceZone, direction: str) -> bool:
+    if direction == "BUY":
+        return (not zone.broken and zone.type in {"resistance", "mixed"}) or (zone.retested and zone.break_direction == "below")
+    return (not zone.broken and zone.type in {"support", "mixed"}) or (zone.retested and zone.break_direction == "above")
+
+
+def _nearest_opposing_zone(entry: float, target: float, direction: str, zones: list[PriceZone]) -> PriceZone | None:
+    if direction == "BUY":
+        candidates = [zone for zone in zones if _zone_opposes_direction(zone, direction) and entry < zone.lower_price <= target]
+        return min(candidates, key=lambda zone: zone.lower_price, default=None)
+    candidates = [zone for zone in zones if _zone_opposes_direction(zone, direction) and target <= zone.upper_price < entry]
+    return max(candidates, key=lambda zone: zone.upper_price, default=None)
+
+
+def _distance_to_zone(price: float, zone: PriceZone) -> float:
+    if zone.lower_price <= price <= zone.upper_price:
+        return 0.0
+    return min(abs(price - zone.lower_price), abs(price - zone.upper_price))
+
+
+def _opposing_distance_r(entry: float, direction: str, zone: PriceZone, risk: float) -> float:
+    distance = zone.lower_price - entry if direction == "BUY" else entry - zone.upper_price
+    return max(0.0, distance / max(risk, 1e-12))
 
 
 def _trend_continuation(primary: list[StrategyCandle], higher: list[StrategyCandle]) -> StrategyResult:

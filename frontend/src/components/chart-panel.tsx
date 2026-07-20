@@ -13,7 +13,7 @@ import {
 } from "lightweight-charts";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { MarketStructure } from "@/lib/api";
+import type { MarketStructure, PriceZone, ZoneAnalysis } from "@/lib/api";
 
 type ChartPanelProps = {
   symbol: string;
@@ -31,6 +31,13 @@ type ChartPanelProps = {
   candleWarning?: string | null;
   livePreviewCandle?: CandlestickData | null;
   marketStructure?: MarketStructure | null;
+  zoneAnalysis?: ZoneAnalysis | null;
+};
+
+type ZoneBand = {
+  zone: PriceZone;
+  top: number;
+  height: number;
 };
 
 export function ChartPanel({
@@ -48,7 +55,8 @@ export function ChartPanel({
   loadedCandles,
   candleWarning,
   livePreviewCandle,
-  marketStructure
+  marketStructure,
+  zoneAnalysis
 }: ChartPanelProps) {
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -58,6 +66,10 @@ export function ChartPanel({
   const ema200Ref = useRef<ISeriesApi<"Line"> | null>(null);
   const previousViewportKeyRef = useRef("");
   const [showMarketStructure, setShowMarketStructure] = useState(true);
+  const [showSupportResistance, setShowSupportResistance] = useState(true);
+  const [showBrokenZones, setShowBrokenZones] = useState(false);
+  const [showRetests, setShowRetests] = useState(true);
+  const [zoneBands, setZoneBands] = useState<ZoneBand[]>([]);
   const candleDateRange = formatCandleDateRange(candles);
   const visibleMarkers = useMemo(() => {
     if (!showMarketStructure) {
@@ -65,6 +77,19 @@ export function ChartPanel({
     }
     return [...markers, ...marketStructureMarkers(marketStructure)].sort((left, right) => Number(left.time) - Number(right.time));
   }, [markers, marketStructure, showMarketStructure]);
+  const visibleZones = useMemo(
+    () =>
+      (zoneAnalysis?.zones ?? []).filter((zone) => {
+        if (zone.retested) {
+          return showRetests;
+        }
+        if (zone.broken) {
+          return showBrokenZones;
+        }
+        return showSupportResistance;
+      }),
+    [zoneAnalysis, showSupportResistance, showBrokenZones, showRetests]
+  );
 
   useEffect(() => {
     if (!chartContainerRef.current) {
@@ -169,6 +194,36 @@ export function ChartPanel({
     }
   }, [candles, livePreviewCandle]);
 
+  useEffect(() => {
+    const chart = chartRef.current;
+    const series = candleSeriesRef.current;
+    const container = chartContainerRef.current;
+    if (!chart || !series || !container) {
+      return;
+    }
+
+    const updateBands = () => {
+      const nextBands = visibleZones.flatMap((zone) => {
+        const upper = series.priceToCoordinate(zone.upper_price);
+        const lower = series.priceToCoordinate(zone.lower_price);
+        if (upper == null || lower == null) {
+          return [];
+        }
+        return [{ zone, top: Math.min(upper, lower), height: Math.max(2, Math.abs(lower - upper)) }];
+      });
+      setZoneBands(nextBands);
+    };
+
+    updateBands();
+    chart.timeScale().subscribeVisibleLogicalRangeChange(updateBands);
+    const resizeObserver = new ResizeObserver(updateBands);
+    resizeObserver.observe(container);
+    return () => {
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(updateBands);
+      resizeObserver.disconnect();
+    };
+  }, [candles, livePreviewCandle, visibleZones]);
+
   return (
     <section className="chart-panel">
       <div className="chart-header">
@@ -191,10 +246,46 @@ export function ChartPanel({
           >
             Market structure
           </button>
+          <button
+            className={`structure-toggle ${showSupportResistance ? "active" : ""}`}
+            type="button"
+            aria-pressed={showSupportResistance}
+            onClick={() => setShowSupportResistance((value) => !value)}
+          >
+            Support/resistance
+          </button>
+          <button
+            className={`structure-toggle ${showBrokenZones ? "active" : ""}`}
+            type="button"
+            aria-pressed={showBrokenZones}
+            onClick={() => setShowBrokenZones((value) => !value)}
+          >
+            Broken zones
+          </button>
+          <button
+            className={`structure-toggle ${showRetests ? "active" : ""}`}
+            type="button"
+            aria-pressed={showRetests}
+            onClick={() => setShowRetests((value) => !value)}
+          >
+            Retests
+          </button>
         </div>
       </div>
       {candleWarning ? <div className="chart-warning">{candleWarning}</div> : null}
-      <div className="chart-canvas" ref={chartContainerRef}>
+      <div className="chart-canvas">
+        <div className="chart-host" ref={chartContainerRef} />
+        <div className="zone-layer" aria-hidden="true">
+          {zoneBands.map(({ zone, top, height }) => (
+            <div
+              className={`price-zone ${zone.type} ${zone.broken ? "broken" : ""} ${zone.retested ? "retested" : ""}`}
+              key={`${zone.type}-${zone.centre_price}-${zone.first_touch_time}`}
+              style={{ top, height }}
+            >
+              <span>{zone.type === "support" ? "S" : zone.type === "resistance" ? "R" : "S/R"} · {zone.confirmed_touches} · {zone.strength_score}</span>
+            </div>
+          ))}
+        </div>
         {dataSource === "unavailable" ? (
           <div className="chart-empty-state">
             <strong>Real IG candles unavailable</strong>
@@ -220,6 +311,7 @@ export function ChartPanel({
             <i className="legend-dot structure" /> HH / HL / LH / LL
           </span>
         ) : null}
+        {zoneAnalysis ? <span>{zoneAnalysis.zones.length} strongest zones</span> : null}
       </div>
     </section>
   );

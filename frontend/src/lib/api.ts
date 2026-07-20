@@ -78,6 +78,7 @@ export type LiveChartLoadResult = {
   chartData: ChartDataSet;
   dataSource: "ig" | "mock" | "unavailable";
   marketStructure?: MarketStructure | null;
+  zoneAnalysis?: ZoneAnalysis | null;
   epic?: string;
   error?: string;
   requestedCandles?: number;
@@ -107,6 +108,36 @@ export type MarketStructure = {
   left_candles: number;
   right_candles: number;
   closed_candle_count: number;
+};
+
+export type PriceZone = {
+  lower_price: number;
+  upper_price: number;
+  centre_price: number;
+  type: "support" | "resistance" | "mixed";
+  confirmed_touches: number;
+  first_touch_time: string;
+  most_recent_touch_time: string;
+  strength_score: number;
+  broken: boolean;
+  retested: boolean;
+  higher_timeframe_confluence: boolean;
+  break_direction: "above" | "below" | null;
+  broken_at: string | null;
+  retested_at: string | null;
+  rejection_strength: number;
+};
+
+export type ZoneAnalysis = {
+  symbol: string;
+  timeframe: string;
+  higher_timeframe: string | null;
+  atr_14: number | null;
+  clustering_distance_atr: number;
+  break_buffer_atr: number;
+  closed_candle_count: number;
+  zones: PriceZone[];
+  reasons: string[];
 };
 
 export type LiveQuote = {
@@ -218,12 +249,16 @@ export async function loadChartData(symbol: string, timeframe: Timeframe): Promi
       throw new Error("Backend returned no candles");
     }
 
-    const marketStructure = await fetchMarketStructure(symbol, timeframe).catch(() => null);
+    const [marketStructure, zoneAnalysis] = await Promise.all([
+      fetchMarketStructure(symbol, timeframe).catch(() => null),
+      fetchZones(symbol, timeframe).catch(() => null)
+    ]);
 
     return {
       chartData: buildChartDataFromCandles(symbol, timeframe, candles),
       dataSource: "ig",
       marketStructure,
+      zoneAnalysis,
       epic,
       requestedCandles: candleBootstrap.requested_count,
       loadedCandles: candleBootstrap.loaded_count,
@@ -244,6 +279,15 @@ export async function fetchMarketStructure(symbol: string, timeframe: Timeframe)
   const response = await fetch(`${API_BASE_URL}/api/analysis/market-structure?${params.toString()}`);
   if (!response.ok) {
     throw new Error(await responseErrorMessage(response, "Market structure fetch failed"));
+  }
+  return response.json();
+}
+
+export async function fetchZones(symbol: string, timeframe: Timeframe): Promise<ZoneAnalysis> {
+  const params = new URLSearchParams({ symbol, timeframe });
+  const response = await fetch(`${API_BASE_URL}/api/analysis/zones?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Support/resistance zone fetch failed"));
   }
   return response.json();
 }
