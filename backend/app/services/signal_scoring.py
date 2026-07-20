@@ -110,7 +110,7 @@ def _score_components(best: StrategyResult | None, weights: dict[str, int], *, n
 
     data = best.components
     rr = float(best.risk_reward_ratio or Decimal("0"))
-    trend_score = _score_trend(best, weights["trend_alignment"])
+    trend_components = _score_trend_line_components(best, weights["trend_alignment"])
     momentum_score = _score_momentum(best, weights["momentum_confirmation"])
     volatility_score = _score_volatility(best, weights["volatility_condition"])
     zone_components = _score_zone_components(best, weights["support_resistance_quality"])
@@ -119,7 +119,7 @@ def _score_components(best: StrategyResult | None, weights: dict[str, int], *, n
     spread_session_score = weights["spread_session_quality"]
 
     return [
-        _component("trend_alignment", weights["trend_alignment"], trend_score, trend_score >= weights["trend_alignment"] * 0.6, _detail_trend(best), data),
+        *trend_components,
         _component("momentum_confirmation", weights["momentum_confirmation"], momentum_score, momentum_score >= weights["momentum_confirmation"] * 0.6, _detail_momentum(best), data),
         _component("volatility_condition", weights["volatility_condition"], volatility_score, volatility_score >= weights["volatility_condition"] * 0.6, _detail_volatility(best), data),
         *zone_components,
@@ -144,6 +144,34 @@ def _score_trend(result: StrategyResult, max_score: int) -> int:
     if result.components.get("ema_alignment") or "multi_timeframe_ema_alignment" in result.filters_passed:
         return round(max_score * 0.75)
     return round(max_score * 0.35)
+
+
+def _score_trend_line_components(result: StrategyResult, max_score: int) -> list[ScoreComponent]:
+    trend_weight = max(0, max_score)
+    alignment_max = trend_weight * 8 // 20
+    bounce_max = trend_weight * 3 // 20
+    confluence_max = trend_weight * 3 // 20
+    break_max = trend_weight * 3 // 20
+    retest_max = trend_weight - alignment_max - bounce_max - confluence_max - break_max
+    alignment_score = _score_trend(result, alignment_max)
+    has_context = "valid_trend_line_bounce" in result.components
+    bounce = bool(result.components.get("valid_trend_line_bounce"))
+    confluence = bool(result.components.get("trend_line_zone_confluence"))
+    trend_break = bool(result.components.get("confirmed_trend_line_break"))
+    failed_retest = bool(result.components.get("failed_trend_line_retest"))
+    if has_context:
+        scores = (bounce_max if bounce else 0, confluence_max if confluence else 0, break_max if trend_break else 0, retest_max if failed_retest else 0)
+    else:
+        legacy = _score_trend(result, trend_weight)
+        denominator = max(trend_weight, 1)
+        scores = tuple(round(legacy * weight / denominator) for weight in (bounce_max, confluence_max, break_max, retest_max))
+    return [
+        _component("trend_alignment", alignment_max, alignment_score, alignment_score >= alignment_max * 0.6, _detail_trend(result), result.components),
+        _component("valid_trend_line_bounce", bounce_max, scores[0], bounce, "A closed candle bounced from the relevant active trend line." if bounce else "No relevant closed-candle trend-line bounce is confirmed.", {"confirmed": bounce}),
+        _component("trend_line_zone_confluence", confluence_max, scores[1], confluence, "The relevant trend line overlaps a confirmed horizontal zone." if confluence else "No trend-line and horizontal-zone confluence is confirmed.", {"confirmed": confluence}),
+        _component("confirmed_trend_line_break", break_max, scores[2], trend_break, "A closed candle broke the opposing trend line beyond its ATR buffer." if trend_break else "No relevant buffered trend-line break is confirmed.", {"confirmed": trend_break}),
+        _component("failed_trend_line_retest", retest_max, scores[3], failed_retest, "The broken trend line was retested and not reclaimed on a closed candle." if failed_retest else "No failed trend-line retest is confirmed.", {"confirmed": failed_retest}),
+    ]
 
 
 def _score_momentum(result: StrategyResult, max_score: int) -> int:

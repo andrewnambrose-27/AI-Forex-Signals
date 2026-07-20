@@ -26,7 +26,7 @@ from app.services.signal_scoring import (
     get_scoring_settings,
     update_scoring_settings,
 )
-from app.services.signal_engine import StrategyEvaluation, StrategyResult, apply_zone_scoring_context, evaluate_strategies, generate_signal
+from app.services.signal_engine import StrategyEvaluation, StrategyResult, apply_trend_line_scoring_context, apply_zone_scoring_context, evaluate_strategies, generate_signal
 
 router = APIRouter(prefix="/signals", tags=["signals"])
 
@@ -63,6 +63,10 @@ def evaluate_signal(payload: SignalEvaluateRequest, db: DbSession) -> SignalEval
         evaluation,
         primary_candles=candles_by_timeframe.get(payload.timeframe.lower(), []),
         higher_candles=candles_by_timeframe.get(higher_timeframe, []) if higher_timeframe else [],
+    )
+    apply_trend_line_scoring_context(
+        evaluation,
+        primary_candles=candles_by_timeframe.get(payload.timeframe.lower(), []),
     )
     risk = evaluate_pair_news_risk(db, payload.pair)
     if risk.blocked:

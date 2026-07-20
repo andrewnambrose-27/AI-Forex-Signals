@@ -6,6 +6,7 @@ os.environ.setdefault("JWT_SECRET_KEY", "test-secret")
 
 from app.services.backtesting import run_backtest
 from app.services.market_structure import analyze_market_structure
+from app.services.trend_lines import detect_trend_lines
 
 
 def rising_candles(count: int = 260, start: float = 1.1000):
@@ -91,3 +92,24 @@ def test_walk_forward_structure_never_receives_future_candles():
 
         assert later_points_available_then == walk_forward.recent_structure_points
         assert all(point.confirmed_at <= cutoff for point in walk_forward.recent_structure_points)
+
+
+def test_walk_forward_trend_lines_use_only_confirmed_anchors_and_ignore_open_future_bar():
+    candles = rising_candles(40, start=1.1)
+    for index, low in ((14, 1.090), (18, 1.091), (22, 1.092), (26, 1.093), (30, 1.094), (34, 1.095)):
+        candle = candles[index]
+        candles[index] = SimpleNamespace(opened_at=candle.opened_at, open=1.1, high=1.105, low=low, close=1.1)
+    for index, high in ((16, 1.120), (20, 1.119), (24, 1.118), (28, 1.117), (32, 1.116), (36, 1.115)):
+        candle = candles[index]
+        candles[index] = SimpleNamespace(opened_at=candle.opened_at, open=1.1, high=high, low=1.095, close=1.1)
+
+    for end_index in range(28, 38):
+        prefix = candles[: end_index + 1]
+        result = detect_trend_lines(prefix, left_candles=1, right_candles=1, minimum_anchor_distance=5)
+        cutoff = candles[end_index].opened_at
+        assert all(line.last_anchor_confirmed_at <= cutoff for line in result.lines)
+
+        open_future = SimpleNamespace(
+            opened_at=cutoff + timedelta(minutes=5), open=1.1, high=2.0, low=0.1, close=0.1, is_closed=False
+        )
+        assert detect_trend_lines([*prefix, open_future], left_candles=1, right_candles=1, minimum_anchor_distance=5) == result

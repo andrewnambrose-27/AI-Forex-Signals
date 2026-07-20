@@ -79,6 +79,7 @@ export type LiveChartLoadResult = {
   dataSource: "ig" | "mock" | "unavailable";
   marketStructure?: MarketStructure | null;
   zoneAnalysis?: ZoneAnalysis | null;
+  trendLineAnalysis?: TrendLineAnalysis | null;
   epic?: string;
   error?: string;
   requestedCandles?: number;
@@ -137,6 +138,39 @@ export type ZoneAnalysis = {
   break_buffer_atr: number;
   closed_candle_count: number;
   zones: PriceZone[];
+  reasons: string[];
+};
+
+export type TrendLine = {
+  start_time: string;
+  start_price: number;
+  end_time: string;
+  end_price: number;
+  direction: "bullish" | "bearish";
+  role: "primary" | "secondary";
+  touch_count: number;
+  confidence_score: number;
+  status: "active" | "broken";
+  broken_at: string | null;
+  bounce_detected: boolean;
+  bounce_at: string | null;
+  break_retested: boolean;
+  retested_at: string | null;
+  failed_retest: boolean;
+  horizontal_zone_confluence: boolean;
+  first_anchor_confirmed_at: string;
+  last_anchor_confirmed_at: string;
+};
+
+export type TrendLineAnalysis = {
+  symbol: string;
+  timeframe: string;
+  atr_14: number | null;
+  touch_tolerance_atr: number;
+  break_buffer_atr: number;
+  minimum_anchor_distance: number;
+  closed_candle_count: number;
+  lines: TrendLine[];
   reasons: string[];
 };
 
@@ -249,9 +283,10 @@ export async function loadChartData(symbol: string, timeframe: Timeframe): Promi
       throw new Error("Backend returned no candles");
     }
 
-    const [marketStructure, zoneAnalysis] = await Promise.all([
+    const [marketStructure, zoneAnalysis, trendLineAnalysis] = await Promise.all([
       fetchMarketStructure(symbol, timeframe).catch(() => null),
-      fetchZones(symbol, timeframe).catch(() => null)
+      fetchZones(symbol, timeframe).catch(() => null),
+      fetchTrendLines(symbol, timeframe).catch(() => null)
     ]);
 
     return {
@@ -259,6 +294,7 @@ export async function loadChartData(symbol: string, timeframe: Timeframe): Promi
       dataSource: "ig",
       marketStructure,
       zoneAnalysis,
+      trendLineAnalysis,
       epic,
       requestedCandles: candleBootstrap.requested_count,
       loadedCandles: candleBootstrap.loaded_count,
@@ -288,6 +324,15 @@ export async function fetchZones(symbol: string, timeframe: Timeframe): Promise<
   const response = await fetch(`${API_BASE_URL}/api/analysis/zones?${params.toString()}`);
   if (!response.ok) {
     throw new Error(await responseErrorMessage(response, "Support/resistance zone fetch failed"));
+  }
+  return response.json();
+}
+
+export async function fetchTrendLines(symbol: string, timeframe: Timeframe): Promise<TrendLineAnalysis> {
+  const params = new URLSearchParams({ symbol, timeframe });
+  const response = await fetch(`${API_BASE_URL}/api/analysis/trend-lines?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Trend-line fetch failed"));
   }
   return response.json();
 }

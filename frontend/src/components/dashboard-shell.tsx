@@ -250,6 +250,7 @@ export function DashboardShell() {
             livePreviewCandle={livePreviewCandle}
             marketStructure={chartResult.marketStructure}
             zoneAnalysis={chartResult.zoneAnalysis}
+            trendLineAnalysis={chartResult.trendLineAnalysis}
           />
           <SignalPanel signal={latestSignal} />
         </div>

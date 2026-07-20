@@ -3,6 +3,7 @@
 import {
   ColorType,
   CrosshairMode,
+  LineStyle,
   createChart,
   type CandlestickData,
   type IChartApi,
@@ -13,7 +14,7 @@ import {
 } from "lightweight-charts";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { MarketStructure, PriceZone, ZoneAnalysis } from "@/lib/api";
+import type { MarketStructure, PriceZone, TrendLineAnalysis, ZoneAnalysis } from "@/lib/api";
 
 type ChartPanelProps = {
   symbol: string;
@@ -32,6 +33,7 @@ type ChartPanelProps = {
   livePreviewCandle?: CandlestickData | null;
   marketStructure?: MarketStructure | null;
   zoneAnalysis?: ZoneAnalysis | null;
+  trendLineAnalysis?: TrendLineAnalysis | null;
 };
 
 type ZoneBand = {
@@ -56,7 +58,8 @@ export function ChartPanel({
   candleWarning,
   livePreviewCandle,
   marketStructure,
-  zoneAnalysis
+  zoneAnalysis,
+  trendLineAnalysis
 }: ChartPanelProps) {
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -64,11 +67,13 @@ export function ChartPanel({
   const ema20Ref = useRef<ISeriesApi<"Line"> | null>(null);
   const ema50Ref = useRef<ISeriesApi<"Line"> | null>(null);
   const ema200Ref = useRef<ISeriesApi<"Line"> | null>(null);
+  const trendLineSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
   const previousViewportKeyRef = useRef("");
   const [showMarketStructure, setShowMarketStructure] = useState(true);
   const [showSupportResistance, setShowSupportResistance] = useState(true);
   const [showBrokenZones, setShowBrokenZones] = useState(false);
   const [showRetests, setShowRetests] = useState(true);
+  const [showTrendLines, setShowTrendLines] = useState(true);
   const [zoneBands, setZoneBands] = useState<ZoneBand[]>([]);
   const candleDateRange = formatCandleDateRange(candles);
   const visibleMarkers = useMemo(() => {
@@ -154,6 +159,7 @@ export function ChartPanel({
       ema20Ref.current = null;
       ema50Ref.current = null;
       ema200Ref.current = null;
+      trendLineSeriesRef.current = [];
     };
   }, []);
 
@@ -224,6 +230,43 @@ export function ChartPanel({
     };
   }, [candles, livePreviewCandle, visibleZones]);
 
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) {
+      return;
+    }
+    for (const series of trendLineSeriesRef.current) {
+      chart.removeSeries(series);
+    }
+    trendLineSeriesRef.current = [];
+    if (!showTrendLines) {
+      return;
+    }
+    for (const line of trendLineAnalysis?.lines ?? []) {
+      const series = chart.addLineSeries({
+        color: line.direction === "bullish" ? "#22c55e" : "#f43f5e",
+        lineWidth: line.role === "primary" ? 2 : 1,
+        lineStyle: line.status === "broken" ? LineStyle.Dashed : LineStyle.Solid,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false
+      });
+      series.setData([
+        { time: Math.floor(new Date(line.start_time).getTime() / 1000) as Time, value: line.start_price },
+        { time: Math.floor(new Date(line.end_time).getTime() / 1000) as Time, value: line.end_price }
+      ]);
+      trendLineSeriesRef.current.push(series);
+    }
+    return () => {
+      if (chartRef.current) {
+        for (const series of trendLineSeriesRef.current) {
+          chartRef.current.removeSeries(series);
+        }
+      }
+      trendLineSeriesRef.current = [];
+    };
+  }, [showTrendLines, trendLineAnalysis]);
+
   return (
     <section className="chart-panel">
       <div className="chart-header">
@@ -238,6 +281,14 @@ export function ChartPanel({
           {candleDateRange ? <span>{candleDateRange}</span> : null}
           <span>{ema200WarmingUp ? "EMA 200 warming up" : "EMA 20 / 50 / 200"}</span>
           {marketStructure ? <span>Structure {marketStructure.direction} · {marketStructure.confidence_score}%</span> : null}
+          <button
+            className={`structure-toggle ${showTrendLines ? "active" : ""}`}
+            type="button"
+            aria-pressed={showTrendLines}
+            onClick={() => setShowTrendLines((value) => !value)}
+          >
+            Trend lines
+          </button>
           <button
             className={`structure-toggle ${showMarketStructure ? "active" : ""}`}
             type="button"
@@ -312,6 +363,7 @@ export function ChartPanel({
           </span>
         ) : null}
         {zoneAnalysis ? <span>{zoneAnalysis.zones.length} strongest zones</span> : null}
+        {showTrendLines && trendLineAnalysis ? <span>{trendLineAnalysis.lines.length} confirmed trend lines</span> : null}
       </div>
     </section>
   );

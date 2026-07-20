@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import auth, backtest, calendar, candles, health, ig, market_structure, signals, streaming, watchlist, zones
+from app.api.routes import auth, backtest, calendar, candles, health, ig, market_structure, signals, streaming, trend_lines, watchlist, zones
 from app.core.config import get_settings
 
 settings = get_settings()
@@ -23,6 +23,7 @@ app.include_router(signals.router, prefix="/api")
 app.include_router(backtest.router, prefix="/api")
 app.include_router(market_structure.router, prefix="/api")
 app.include_router(zones.router, prefix="/api")
+app.include_router(trend_lines.router, prefix="/api")
 app.include_router(streaming.router)
 app.include_router(auth.router, prefix=settings.api_v1_prefix)
 app.include_router(candles.router, prefix=settings.api_v1_prefix)

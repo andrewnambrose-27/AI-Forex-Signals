@@ -7,6 +7,7 @@ from typing import Any
 from app.schemas.signal import SignalRead, SignalRequest
 from app.services.technical_indicators import adx, atr, bollinger_bands, ema_set, macd, rsi, support_resistance_zones
 from app.services.support_resistance import PriceZone, detect_support_resistance_zones
+from app.services.trend_lines import detect_trend_lines
 
 MIN_CLOSED_STRATEGY_CANDLES = 220
 MIN_CLOSED_BACKTEST_CANDLES = 60
@@ -240,6 +241,66 @@ def apply_zone_scoring_context(
     evaluation.reasons = [*selected.reasons]
     evaluation.filters_passed = list(dict.fromkeys([*evaluation.filters_passed, *selected.filters_passed]))
     evaluation.filters_failed = list(dict.fromkeys([*evaluation.filters_failed, *selected.filters_failed]))
+
+
+def apply_trend_line_scoring_context(
+    evaluation: StrategyEvaluation,
+    *,
+    primary_candles: list[Any],
+) -> None:
+    """Attach directional trend-line events calculated from closed candles."""
+    if evaluation.direction not in {"BUY", "SELL"} or not evaluation.strategy or len(primary_candles) < 20:
+        return
+    if not all(hasattr(candle, "opened_at") or isinstance(candle, dict) and ("opened_at" in candle or "time" in candle) for candle in primary_candles):
+        return
+
+    closed_primary = primary_candles[:-1]
+    zones = detect_support_resistance_zones(closed_primary, max_zones=8).zones
+    analysis = detect_trend_lines(closed_primary, horizontal_zones=zones)
+    selected = next((result for result in evaluation.components if result.strategy == evaluation.strategy), None)
+    if selected is None:
+        return
+
+    continuation_direction = "bullish" if evaluation.direction == "BUY" else "bearish"
+    breakout_direction = "bearish" if evaluation.direction == "BUY" else "bullish"
+    bounce = next(
+        (line for line in analysis.lines if line.direction == continuation_direction and line.status == "active" and line.bounce_detected),
+        None,
+    )
+    breakout = next(
+        (line for line in analysis.lines if line.direction == breakout_direction and line.status == "broken"),
+        None,
+    )
+    retest = next(
+        (line for line in analysis.lines if line.direction == breakout_direction and line.failed_retest),
+        None,
+    )
+    confluence_line = next(
+        (line for line in (bounce, breakout, retest) if line is not None and line.horizontal_zone_confluence),
+        None,
+    )
+    selected.components.update(
+        {
+            "valid_trend_line_bounce": bounce is not None,
+            "trend_line_zone_confluence": confluence_line is not None,
+            "confirmed_trend_line_break": breakout is not None,
+            "failed_trend_line_retest": retest is not None,
+        }
+    )
+    if bounce:
+        selected.reasons.append(f"Price bounced from an active {bounce.direction} trend line with {bounce.touch_count} confirmed touches.")
+        selected.filters_passed.append("valid_trend_line_bounce")
+    if confluence_line:
+        selected.reasons.append("The trend line aligns with a confirmed horizontal support/resistance zone.")
+        selected.filters_passed.append("trend_line_zone_confluence")
+    if breakout:
+        selected.reasons.append("A closed candle confirmed a trend-line break beyond the configured ATR buffer.")
+        selected.filters_passed.append("confirmed_trend_line_break")
+    if retest:
+        selected.reasons.append("Price retested the broken trend line and failed to reclaim it on a closed candle.")
+        selected.filters_passed.append("failed_trend_line_retest")
+    evaluation.reasons = [*selected.reasons]
+    evaluation.filters_passed = list(dict.fromkeys([*evaluation.filters_passed, *selected.filters_passed]))
 
 
 def _zone_supports_direction(zone: PriceZone, direction: str) -> bool:

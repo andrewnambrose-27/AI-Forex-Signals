@@ -35,9 +35,9 @@ def test_configurable_scoring_uses_default_threshold_and_disclaimer():
 
     assert result.minimum_score == 80
     assert result.score >= 80
-    assert len(result.components) == 10
+    assert len(result.components) == 14
     assert result.components[0].name == "trend_alignment"
-    assert result.components[0].max_score == 20
+    assert result.components[0].max_score == 8
     assert SCORE_DISCLAIMER in result.reasons
 
 
@@ -117,3 +117,32 @@ def test_zone_scoring_components_penalise_obstructed_target_and_reward_retest():
     assert "0.6R" in components["target_obstructed_by_opposing_zone"].details
     assert components["breakout_confirmation"].passed is True
     assert components["retest_confirmation"].passed is True
+
+
+def test_trend_line_scoring_components_are_explicit_and_bounded():
+    strategy = StrategyResult(
+        strategy="trend_continuation",
+        direction="BUY",
+        score=90,
+        components={
+            "ema_alignment": 25,
+            "valid_trend_line_bounce": True,
+            "trend_line_zone_confluence": True,
+            "confirmed_trend_line_break": True,
+            "failed_trend_line_retest": True,
+        },
+        risk_reward_ratio=Decimal("2.0"),
+    )
+    evaluation = StrategyEvaluation(
+        pair="EURUSD", epic="CS.D.EURUSD.MINI.IP", timeframe="5m", direction="BUY", score=90,
+        status="active", strategy=strategy.strategy, entry_reference_price=Decimal("1.1"),
+        suggested_stop=Decimal("1.09"), suggested_target=Decimal("1.12"), risk_reward_ratio=Decimal("2"),
+        reasons=[], filters_passed=[], filters_failed=[], components=[strategy],
+    )
+
+    result = apply_configurable_scoring(evaluation, settings=DEFAULT_SCORING_SETTINGS)
+    components = {component.name: component for component in result.components}
+    names = {"valid_trend_line_bounce", "trend_line_zone_confluence", "confirmed_trend_line_break", "failed_trend_line_retest"}
+
+    assert all(components[name].passed for name in names)
+    assert sum(component.max_score for component in result.components) == 100
