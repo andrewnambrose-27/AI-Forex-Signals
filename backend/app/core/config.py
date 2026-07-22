@@ -22,6 +22,14 @@ class Settings(BaseSettings):
     market_data_api_key: str | None = None
     news_api_key: str | None = None
 
+    economic_calendar_provider: str = "fmp"
+    fmp_api_key: str | None = None
+    news_sync_interval_minutes: int = 15
+    news_block_before_high_minutes: int = 60
+    news_block_after_high_minutes: int = 30
+    news_block_before_medium_minutes: int = 20
+    news_block_after_medium_minutes: int = 10
+
     ig_environment: str = "DEMO"
     ig_api_key: str | None = None
     ig_username: str | None = None

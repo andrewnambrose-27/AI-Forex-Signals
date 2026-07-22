@@ -79,11 +79,11 @@ def evaluate_signal(payload: SignalEvaluateRequest, db: DbSession) -> SignalEval
     risk = evaluate_pair_news_risk(db, payload.pair)
     if risk.blocked:
         evaluation.status = "filtered"
-        evaluation.filters_failed.append("high_impact_news_window")
+        evaluation.filters_failed.append(f"{risk.event.impact}_impact_news_window" if risk.event else f"calendar_data_{risk.calendar_status}")
         if risk.event:
             evaluation.reasons.insert(
                 0,
-                f"Blocked by high-impact {risk.event.currency} event: {risk.event.title} at {risk.event.event_time.isoformat()}",
+                f"Blocked by {risk.event.impact}-impact {risk.event.currency} event: {risk.event.title} at {risk.event.event_time.isoformat()}",
             )
         elif risk.reason:
             evaluation.reasons.insert(0, risk.reason)
@@ -100,6 +100,8 @@ def evaluate_signal(payload: SignalEvaluateRequest, db: DbSession) -> SignalEval
     evaluation.filters_passed = [*evaluation.filters_passed, *scoring.filters_passed]
     evaluation.filters_failed = [*evaluation.filters_failed, *scoring.filters_failed]
     if evaluation.direction not in {"BUY", "SELL"}:
+        evaluation.status = "filtered"
+    elif risk.blocked:
         evaluation.status = "filtered"
     elif multi_timeframe.strong_conflict:
         evaluation.status = "filtered"
