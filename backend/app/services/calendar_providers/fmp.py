@@ -22,25 +22,37 @@ class FMPEconomicCalendarProvider(EconomicCalendarProvider):
             raise CalendarProviderError("FMP_API_KEY is not configured")
         if end_date < start_date:
             raise ValueError("end_date must be on or after start_date")
+        params = {
+            "from": start_date.isoformat(),
+            "to": end_date.isoformat(),
+            "apikey": self.api_key,
+        }
         try:
             if self.client is not None:
                 response = self.client.get(
                     self.endpoint,
-                    params={"from": start_date.isoformat(), "to": end_date.isoformat()},
-                    headers={"apikey": self.api_key},
+                    params=params,
                     timeout=self.timeout_seconds,
                 )
             else:
                 with httpx.Client(timeout=self.timeout_seconds) as client:
                     response = client.get(
                         self.endpoint,
-                        params={"from": start_date.isoformat(), "to": end_date.isoformat()},
-                        headers={"apikey": self.api_key},
+                        params=params,
                     )
-            response.raise_for_status()
+            if response.is_error:
+                raise CalendarProviderError(
+                    f"FMP economic calendar request failed with HTTP {response.status_code}"
+                )
             payload = response.json()
-        except (httpx.HTTPError, ValueError) as exc:
-            raise CalendarProviderError(f"FMP economic calendar request failed: {exc}") from exc
+        except CalendarProviderError:
+            raise
+        except httpx.HTTPError as exc:
+            raise CalendarProviderError(
+                f"FMP economic calendar request failed: {type(exc).__name__}"
+            ) from exc
+        except ValueError as exc:
+            raise CalendarProviderError("FMP economic calendar returned invalid JSON") from exc
         if not isinstance(payload, list):
             raise CalendarProviderError("FMP economic calendar returned an unexpected payload")
         return [item for item in payload if isinstance(item, dict)]

@@ -144,7 +144,7 @@ def test_fallback_impact_classifier_is_deterministic(title: str, impact: str):
     assert classify_event_impact(title) == impact
 
 
-def test_fmp_provider_uses_header_auth_and_normalizes_utc_event():
+def test_fmp_provider_uses_query_auth_and_normalizes_utc_event():
     captured: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -160,12 +160,27 @@ def test_fmp_provider_uses_header_auth_and_normalizes_utc_event():
     raw = provider.fetch_events(date(2026, 7, 22), date(2026, 7, 23))[0]
     event = provider.normalize_event(raw)
 
-    assert captured[0].headers["apikey"] == "secret-key"
-    assert "secret-key" not in str(captured[0].url)
+    assert captured[0].url.params["apikey"] == "secret-key"
     assert event.provider_event_id == "fmp-123"
     assert event.event_time_utc == datetime(2026, 7, 22, 12, 30, tzinfo=timezone.utc)
     assert event.impact == "high"
     assert event.status == "released"
+
+
+def test_fmp_provider_errors_never_expose_api_key():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, request=request)
+
+    provider = FMPEconomicCalendarProvider(
+        "secret-key",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    with pytest.raises(CalendarProviderError) as exc_info:
+        provider.fetch_events(date(2026, 7, 22), date(2026, 7, 23))
+
+    assert "HTTP 401" in str(exc_info.value)
+    assert "secret-key" not in str(exc_info.value)
 
 
 def test_fmp_health_check_reports_missing_key_without_network_call():
