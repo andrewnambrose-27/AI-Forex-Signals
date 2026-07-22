@@ -1,6 +1,6 @@
 """production economic calendar fields
 
-Revision ID: 0003_production_economic_calendar
+Revision ID: 0003_economic_calendar
 Revises: 0002_add_economic_event_country
 Create Date: 2026-07-22 00:00:00.000000
 """
@@ -13,7 +13,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision: str = "0003_production_economic_calendar"
+revision: str = "0003_economic_calendar"
 down_revision: Union[str, None] = "0002_add_economic_event_country"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
